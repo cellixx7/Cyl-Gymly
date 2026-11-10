@@ -1,0 +1,15 @@
+{
+  "R1_corrupt_storage_overwritten": true,
+  "R1_recovery_screen_shown": false,
+  "R2_persistent_save_error_visible": false,
+  "R3_invalid_backup_accepted": true,
+  "R3_page_errors": [
+    "db.meals.filter is not a function"
+  ],
+  "R4_xss_in_confirm": false,
+  "R4_xss_via_plan_id": true,
+  "R5_unknown_macros_became_zero": true,
+  "R6_week_counter": "4 de 3 na semana",
+  "R6_over_100": true,
+  "R8_orphan_photo_after_cancel": true
+}

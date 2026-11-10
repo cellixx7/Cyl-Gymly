@@ -1,0 +1,9 @@
+build/
+local.properties
+.gradle/
+node_modules/
+tests/output/
+
+# Chave de assinatura do APK: guarde uma cópia segura, não publique
+keystore.jks
+__pycache__/

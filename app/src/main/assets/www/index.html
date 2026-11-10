@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cyl Gymly</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="save-error" class="save-error hidden" data-save-error role="alert"><span>Falha ao salvar</span><button type="button" id="save-retry">Tentar de novo</button></div>
+<header class="topbar">
+  <h1 id="title">Cyl Gymly</h1>
+  <button class="icon-btn" id="btn-settings" aria-label="Configurações">
+    <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.6c-.6.3-1.2.6-1.7 1l-2.5-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+  </button>
+</header>
+<main id="view"></main>
+<nav class="tabbar" id="tabbar" aria-label="Seções">
+  <button data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Início</span></button>
+  <button data-tab="food"><svg viewBox="0 0 24 24"><path d="M7 2v8a3 3 0 0 0 2 2.8V22h2v-9.2A3 3 0 0 0 13 10V2h-2v6h-1V2H9v6H8V2zm10 0c-2 0-3 2.5-3 6v5h2v9h2V2z"/></svg><span>Alimentação</span></button>
+  <button data-tab="daily" class="tab-daily"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm-1 3v6l5 3 1-1.7-4-2.4V7z"/></svg><span>Treino diário</span></button>
+  <button data-tab="train"><svg viewBox="0 0 24 24"><path d="M2 10h2V8h2v8H4v-2H2zm4-4h3v12H6zm3 5h6v2H9zm6-5h3v12h-3zm3 2h2v2h2v4h-2v2h-2z"/></svg><span>Treino</span></button>
+  <button data-tab="progress"><svg viewBox="0 0 24 24"><path d="M3 20h18v2H3zM5 17l4-6 4 3 6-9 1.6 1.2-7.1 10.6-4-3L6.7 18z"/></svg><span>Evolução</span></button>
+  <button data-tab="health"><svg viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.8-8 11-8 11z"/></svg><span>Saúde</span></button>
+</nav>
+<div id="sheet-wrap" class="sheet-wrap hidden"><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"></div></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<div id="rest" class="rest hidden" role="timer" aria-live="off"></div>
+<div id="pip" class="pip" aria-live="polite"></div>
+<script src="foods.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
