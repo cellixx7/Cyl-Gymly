@@ -182,6 +182,12 @@ C.adherence = (db, from, to, todayStr) => {
 
 // ------------------------------------------------------------------ força
 // Indicadores separados (carga, repetições, séries, volume, esforço). Sessões "leves" não entram na comparação.
+// Unidade da carga de um exercício registrado: 'kg' (padrão) ou 'lb'. O campo sets[].kg guarda o
+// número como foi digitado, na unidade do exercício; comparações e gráficos convertem para kg.
+C.LB_KG = 0.45359237;
+C.exUnit = e => (e && e.unit === 'lb' ? 'lb' : 'kg');
+C.toKg = (v, unit) => (v == null ? null : unit === 'lb' ? Math.round(v * C.LB_KG * 100) / 100 : v);
+C.fromKg = (v, unit) => (v == null ? null : unit === 'lb' ? Math.round(v / C.LB_KG * 10) / 10 : v);
 C.exerciseEntries = (db, name, from, to) => {
   const key = String(name).toLowerCase();
   return db.sessions
@@ -190,14 +196,16 @@ C.exerciseEntries = (db, name, from, to) => {
     .map(s => {
       const e = (s.exercises || []).find(x => String(x.name).toLowerCase() === key);
       if (!e) return null;
-      const sets = e.sets.filter(x => x.done).map(x => ({ kg: C.num(x.kg), reps: C.num(x.reps) }));
+      const unit = C.exUnit(e);
+      const sets = e.sets.filter(x => x.done).map(x => ({ kg: C.toKg(C.num(x.kg), unit), load: C.num(x.kg), reps: C.num(x.reps) }));
       if (!sets.length) return null;
       const kgs = sets.map(x => x.kg).filter(v => v != null);
       const topKg = kgs.length ? Math.max(...kgs) : null;
       const atTop = topKg == null ? sets : sets.filter(x => x.kg === topKg);
       const repsArr = atTop.map(x => x.reps).filter(v => v != null);
       return {
-        date: s.date, sessionId: s.id, sets, nSets: sets.length, topKg,
+        date: s.date, sessionId: s.id, sets, nSets: sets.length, topKg, unit,
+        topLoad: topKg == null ? null : Math.max(...sets.map(x => x.load).filter(v => v != null)),
         repsAtTop: repsArr.length ? Math.max(...repsArr) : null,
         totalReps: sets.reduce((a, x) => a + (x.reps || 0), 0),
         volume: sets.reduce((a, x) => a + (x.kg || 0) * (x.reps || 0), 0),
@@ -338,6 +346,7 @@ C.validateDb = d => {
     if (!Array.isArray(s.exercises)) return err('Sessões #' + (i + 1) + ': exercícios inválidos');
     s.exercises.forEach((e, j) => {
       if (!isObj(e) || typeof e.name !== 'string' || !Array.isArray(e.sets)) return err('Sessões #' + (i + 1) + ' exercício ' + (j + 1) + ': inválido');
+      if (e.unit != null && e.unit !== 'kg' && e.unit !== 'lb') err('Sessões #' + (i + 1) + ' exercício ' + (j + 1) + ': unidade de carga inválida');
       if (e.rpe != null && !(Number.isInteger(e.rpe) && e.rpe >= 1 && e.rpe <= 10)) err('Sessões #' + (i + 1) + ' exercício ' + (j + 1) + ': esforço inválido');
       e.sets.forEach(st => {
         if (!isObj(st)) return err('Sessões #' + (i + 1) + ': série inválida');

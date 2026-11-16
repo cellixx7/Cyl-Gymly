@@ -940,6 +940,32 @@ async function allSets(p) {
     assert(!over, 'rolagem horizontal em 320px');
     await noErrors(p);
   });
+  await t('U1 seletor de unidade da carga (kg / lb): troca, persiste e aparece no histórico e na evolução', async () => {
+    const p = await fresh();
+    await checkin(p);
+    assert(await p.inputValue('[data-change=exUnit]') === 'kg', 'padrão deveria ser kg');
+    await p.selectOption('[data-change=exUnit]', 'lb');
+    assert(await p.getAttribute('[data-set="0:0:kg"]', 'placeholder') === 'lb', 'campo não mudou para lb');
+    await p.fill('[data-set="0:0:kg"]', '90'); await p.fill('[data-set="0:0:reps"]', '12');
+    await p.reload(); await p.click('[data-tab=train]'); await p.click('[data-act=openSession]');
+    assert(await p.inputValue('[data-change=exUnit]') === 'lb', 'unidade perdida ao reabrir');
+    await p.click('[data-act=toggleSet] >> nth=0');
+    if (await p.isVisible('#rest')) await p.click('[data-act=restStop]');
+    await allSets(p);
+    await p.click('[data-act=finishSession]'); await p.click('[data-act=finishSave]');
+    const d = await getDb(p), s = d.sessions[d.sessions.length - 1];
+    assert(s.exercises[0].unit === 'lb' && s.exercises[0].sets[0].kg === '90', 'unidade/valor não gravados');
+    assert(s.exercises[1].unit === 'kg', 'os outros exercícios deveriam continuar em kg');
+    const v = await p.evaluate(k => window.HCore.validateDb(JSON.parse(localStorage.getItem(k))).errors, KEY);
+    assert(v.length === 0, 'base inválida: ' + v.join());
+    await p.click('[data-tab=progress]');
+    await p.click('text=Força');
+    const txt = await p.textContent('main');
+    assert(/Maior carga por sessão \(lb\)/.test(txt) && /90 lb×12/.test(txt), 'evolução não mostra lb');
+    await p.setViewportSize({ width: 320, height: 640 });
+    assert(!(await p.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)), 'rolagem horizontal em 320px');
+    await noErrors(p);
+  });
   await t('A11y fonte ampliada (200%) sem rolagem horizontal', async () => {
     const p = await fresh();
     await p.addStyleTag({ content: 'html{font-size:200%!important} html,body{font-size:32px!important}' });

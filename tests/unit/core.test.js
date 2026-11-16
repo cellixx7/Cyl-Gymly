@@ -202,6 +202,19 @@ test('força: carga digitada inválida é ignorada, não vira zero', () => {
   const e = H.exerciseEntries(db, 'Supino')[0];
   assert.equal(e.topKg, 20); assert.equal(e.repsAtTop, 10);
 });
+test('força: carga em lb é convertida para kg nas comparações e mantém o valor digitado', () => {
+  const lb = ex('2026-11-11', [[100, 12]]); lb.exercises[0].unit = 'lb';
+  const db = baseDb({ sessions: [ex('2026-11-09', [[40, 12]]), lb, ex('2026-11-13', [[50, 12]])] });
+  const e = H.exerciseEntries(db, 'Supino');
+  assert.equal(e[1].unit, 'lb'); assert.equal(e[1].topLoad, 100); assert.equal(e[1].topKg, 45.36);
+  assert.equal(e[0].unit, 'kg'); assert.equal(e[0].topLoad, 40);
+  assert.equal(H.compareEntries(e[0], e[1]), 'melhor');   // 100 lb (45,4 kg) > 40 kg
+  assert.equal(H.compareEntries(e[1], e[2]), 'melhor');   // 50 kg > 100 lb
+  assert.equal(H.fromKg(H.toKg(100, 'lb'), 'lb'), 100);
+  assert.equal(H.validateDb(db).errors.length, 0);
+  lb.exercises[0].unit = 'pedras';
+  assert.ok(H.validateDb(db).errors.some(x => /unidade de carga/.test(x)));
+});
 test('força: dados insuficientes e queda persistente', () => {
   assert.equal(H.strengthTrend([]).status, 'insuficiente');
   assert.equal(H.strengthTrend([{ topKg: 20, repsAtTop: 12, nSets: 2 }]).status, 'insuficiente');

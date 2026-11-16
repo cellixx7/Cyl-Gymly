@@ -588,6 +588,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String appVersion() { return "1.4.0"; }
+        public String appVersion() { return "1.4.1"; }
     }
 }

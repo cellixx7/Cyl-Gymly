@@ -204,6 +204,7 @@ function lastExercise(name, excludeId) {
   }
   return null;
 }
+const exUnit = e => H.exUnit(e);
 function bestSet(ex) {
   const done = ex.sets.filter(s => s.done && (num(s.kg) != null || num(s.reps) != null));
   if (!done.length) return null;
@@ -376,7 +377,7 @@ const tOf = s => parseD(s).getTime();
 
 // ---------------------------------------------------------------- render principal
 const VIEWS = {};
-const APP_NAME = 'Cyl Gymly', APP_VERSION = '1.4.0';
+const APP_NAME = 'Cyl Gymly', APP_VERSION = '1.4.1';
 function render() {
   flushPending();
   applyTheme();
@@ -811,7 +812,7 @@ function createSession(light) {
       const last = lastExercise(e.name);
       const lb = last ? bestSet(last.ex) : null;
       const n = light ? 1 : e.sets;
-      return { name: e.name, targetSets: n, targetReps: e.reps, rpe: null, notes: '', discomfort: false,
+      return { name: e.name, unit: last ? exUnit(last.ex) : 'kg', targetSets: n, targetReps: e.reps, rpe: null, notes: '', discomfort: false,
         sets: Array.from({ length: n }, () => ({ kg: lb && lb.kg != null && lb.kg !== '' ? (light ? '' : lb.kg) : '', reps: '', done: false })) };
     })
   };
@@ -831,7 +832,7 @@ function currentEx(s) {
   if (f && f.sid === s.id && s.exercises[f.i] && !s.exercises[f.i].skip) return f.i;
   return s.exercises.findIndex(e => exState(e) === 'pending');
 }
-function setsTxt(e) { return e.sets.filter(x => x.done).map(x => (x.kg !== '' ? x.kg + '×' : '') + (x.reps || '?')).join(', '); }
+function setsTxt(e) { const lb = exUnit(e) === 'lb'; return e.sets.filter(x => x.done).map(x => (x.kg !== '' ? x.kg + (lb ? ' lb' : '') + '×' : '') + (x.reps || '?')).join(', '); }
 function skipTxt(e) { return e.skip ? (SKIP_REASONS[e.skip.reason] || 'Outro') + (e.skip.note ? ': ' + e.skip.note : '') : ''; }
 function sessionCounts(s) {
   const ex = s.exercises.filter(e => !e.skip);
@@ -846,12 +847,13 @@ function nowText(s) {
 function exCard(s, ei) {
   const e = s.exercises[ei], editing = exState(e) !== 'pending';
   const last = lastExercise(e.name, s.id);
-  const lastTxt = last ? setsTxt(last.ex).replace(/×/g, ' kg × ') : '';
+  const unit = exUnit(e);
+  const lastTxt = last ? setsTxt(last.ex).replace(/×/g, exUnit(last.ex) === 'lb' ? ' × ' : ' kg × ') : '';
   let h = '<div class="card current" aria-current="step"><div class="row between"><h3>▶ ' + esc(e.name) + '</h3><span class="small muted">' + esc(e.targetSets) + ' × ' + esc(e.targetReps) + ' · ' + e.sets.filter(x => x.done).length + '/' + e.sets.length + '</span></div>' +
     (lastTxt ? '<div class="tiny muted">Última vez (' + fmtDs(last.date) + '): ' + esc(lastTxt) + '</div>' : '<div class="tiny muted">Primeira vez: escolha uma carga confortável.</div>') +
-    '<div class="set-row tiny muted"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>';
+    '<div class="set-row tiny muted"><span>#</span><span class="unit-cell">Carga <select class="unit-sel" data-change="exUnit" data-e="' + esc(ei) + '" aria-label="Unidade da carga"><option value="kg"' + (unit === 'kg' ? ' selected' : '') + '>kg</option><option value="lb"' + (unit === 'lb' ? ' selected' : '') + '>lb</option></select></span><span>Reps</span><span></span></div>';
   e.sets.forEach((st, si) => {
-    h += '<div class="set-row"><span class="muted">' + (si + 1) + '</span><input inputmode="decimal" aria-label="Carga em kg, série ' + (si + 1) + '"' + (setValueOk('kg', st.kg) ? '' : ' aria-invalid="true"') + ' data-set="' + ei + ':' + si + ':kg" value="' + esc(st.kg) + '" placeholder="kg"><input inputmode="numeric" aria-label="Repetições, série ' + (si + 1) + '"' + (setValueOk('reps', st.reps) ? '' : ' aria-invalid="true"') + ' data-set="' + ei + ':' + si + ':reps" value="' + esc(st.reps) + '" placeholder="' + esc(String(e.targetReps).split(/[–-]/)[0]) + '"><button class="done-btn ' + (st.done ? 'on' : '') + '" data-act="toggleSet" data-e="' + esc(ei) + '" data-s="' + esc(si) + '" aria-pressed="' + !!st.done + '" aria-label="Série ' + (si + 1) + ' feita">✓</button></div>';
+    h += '<div class="set-row"><span class="muted">' + (si + 1) + '</span><input inputmode="decimal" aria-label="Carga em ' + unit + ', série ' + (si + 1) + '"' + (setValueOk('kg', st.kg) ? '' : ' aria-invalid="true"') + ' data-set="' + ei + ':' + si + ':kg" value="' + esc(st.kg) + '" placeholder="' + unit + '"><input inputmode="numeric" aria-label="Repetições, série ' + (si + 1) + '"' + (setValueOk('reps', st.reps) ? '' : ' aria-invalid="true"') + ' data-set="' + ei + ':' + si + ':reps" value="' + esc(st.reps) + '" placeholder="' + esc(String(e.targetReps).split(/[–-]/)[0]) + '"><button class="done-btn ' + (st.done ? 'on' : '') + '" data-act="toggleSet" data-e="' + esc(ei) + '" data-s="' + esc(si) + '" aria-pressed="' + !!st.done + '" aria-label="Série ' + (si + 1) + ' feita">✓</button></div>';
   });
   h += '<div class="row"><button class="btn ghost sm" data-act="addSet" data-e="' + esc(ei) + '">+ série</button>' + (e.sets.length > 1 ? '<button class="btn ghost sm" data-act="rmSet" data-e="' + esc(ei) + '">− série</button>' : '') + '</div>';
   h += '<label>Esforço percebido (1 = muito leve · 10 = máximo). Na adaptação, mire em 6–7.</label><div class="scale">' +
@@ -1052,11 +1054,14 @@ PROG.forca = function () {
   if (!names.length) return '<p class="muted" style="margin-top:12px">Registre sessões de treino para ver a evolução de força aqui.</p>';
   if (!names.includes(ui.strengthEx)) ui.strengthEx = names[0];
   const rows = db.sessions.filter(attended).sort(byDate).map(s => ({ s, e: s.exercises.find(e => e.name === ui.strengthEx) })).filter(r => r.e && r.e.sets.some(x => x.done));
-  const pts = rows.map(r => { const b = bestSet(r.e); return b && num(b.kg) != null ? [tOf(r.s.date), num(b.kg)] : null; }).filter(Boolean);
-  const vol = rows.map(r => [tOf(r.s.date), sum(r.e.sets.filter(x => x.done), x => (num(x.kg) || 0) * (num(x.reps) || 0))]);
+  // gráficos na unidade da sessão mais recente; sessões registradas na outra unidade são convertidas
+  const U = exUnit(rows[rows.length - 1].e);
+  const conv = (v, e) => exUnit(e) === U ? v : H.fromKg(H.toKg(v, exUnit(e)), U);
+  const pts = rows.map(r => { const b = bestSet(r.e); return b && num(b.kg) != null ? [tOf(r.s.date), conv(num(b.kg), r.e)] : null; }).filter(Boolean);
+  const vol = rows.map(r => [tOf(r.s.date), sum(r.e.sets.filter(x => x.done), x => (conv(num(x.kg), r.e) || 0) * (num(x.reps) || 0))]);
   let h = '<label>Exercício</label><select id="str-ex" data-change="strengthEx">' + names.map(n => '<option ' + (n === ui.strengthEx ? 'selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
-  h += '<div class="card"><h3>Maior carga por sessão (kg)</h3>' + lineChart([{ pts, color: 'var(--pri)', dots: true }]) + '</div>';
-  if (vol.some(v => v[1] > 0)) h += '<div class="card"><h3>Volume (kg × reps somados)</h3>' + lineChart([{ pts: vol, color: 'var(--p)', dots: true }]) + '</div>';
+  h += '<div class="card"><h3>Maior carga por sessão (' + U + ')</h3>' + lineChart([{ pts, color: 'var(--pri)', dots: true }]) + '</div>';
+  if (vol.some(v => v[1] > 0)) h += '<div class="card"><h3>Volume (' + U + ' × reps somados)</h3>' + lineChart([{ pts: vol, color: 'var(--p)', dots: true }]) + '</div>';
   h += '<div class="card"><table><tr><th>Data</th><th>Séries feitas</th><th>Esforço</th></tr>' + rows.slice().reverse().map(r => '<tr><td>' + fmtDs(r.s.date) + '</td><td>' + esc(setsTxt(r.e)) + '</td><td>' + (r.e.rpe || '—') + (r.e.discomfort ? ' ⚠' : '') + '</td></tr>').join('') + '</table></div>';
   h += '<p class="tiny muted">Quedas persistentes de desempenho pedem revisão de recuperação, alimentação, sono e planejamento. Queda de força, isoladamente, não confirma perda muscular.</p>';
   return h;
@@ -2160,6 +2165,7 @@ document.addEventListener('change', e => {
   else if (c === 'pipOn') { db.settings.pipEnabled = el.checked; persist(); workoutSync(); }
   else if (c === 'remToggle') { db.settings.reminders[el.dataset.i].enabled = el.checked; persist(); syncReminders(); toast(el.checked ? 'Lembrete ativado' : 'Lembrete desativado'); }
   else if (c === 'strengthEx') { ui.strengthEx = el.value; render(); }
+  else if (c === 'exUnit') { const s = db.sessions.find(x => x.id === ui.sessionId); if (s && s.exercises[el.dataset.e]) { s.exercises[el.dataset.e].unit = el.value === 'lb' ? 'lb' : 'kg'; persist(); render(); toast('Carga deste exercício em ' + (el.value === 'lb' ? 'libras (lb)' : 'quilos (kg)')); } }
   else if (el.dataset.sfield === 'warmupDone') { const s = db.sessions.find(x => x.id === ui.sessionId); s.warmupDone = el.checked; persist(); }
   else if (el.dataset.efield && el.type === 'checkbox') { const [ei, k] = el.dataset.efield.split(':'); db.sessions.find(x => x.id === ui.sessionId).exercises[ei][k] = el.checked; persist(); }
 });

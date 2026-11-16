@@ -544,7 +544,7 @@ S.progressSummary = (db, opts) => {
         const tr = C.strengthTrend(C.exerciseEntries(db, n, from, today));
         if (tr.n < 1) return null;
         const e = C.exerciseEntries(db, n, from, today), last = e[e.length - 1];
-        return n + ': ' + C.TREND_LABEL[tr.status] + (last ? ' (última: ' + (last.topKg != null ? numBr(last.topKg) + ' kg × ' : '') + (last.repsAtTop != null ? last.repsAtTop : '?') + ' reps, ' + last.nSets + ' séries' + (last.rpe ? ', esforço ' + last.rpe + '/10' : '') + ')' : '');
+        return n + ': ' + C.TREND_LABEL[tr.status] + (last ? ' (última: ' + (last.topKg != null ? numBr(last.topLoad) + ' ' + last.unit + ' × ' : '') + (last.repsAtTop != null ? last.repsAtTop : '?') + ' reps, ' + last.nSets + ' séries' + (last.rpe ? ', esforço ' + last.rpe + '/10' : '') + ')' : '');
       }).filter(Boolean);
       if (lines.length) L.push('- Força por exercício:\n' + lines.map(x => '    · ' + x).join('\n'));
     }
