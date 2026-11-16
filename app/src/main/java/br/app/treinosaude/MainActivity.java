@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -562,7 +563,31 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean takeOpenSession() { boolean v = pendingOpenSession; pendingOpenSession = false; return v; }
 
+        // Configuração por IA: o prompt sai e o código volta pela área de transferência (copiar e colar).
         @JavascriptInterface
-        public String appVersion() { return "1.3.1"; }
+        public boolean copyText(String text) {
+            try {
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm == null || text == null) return false;
+                cm.setPrimaryClip(ClipData.newPlainText("Cyl Gymly", text));
+                return true;
+            } catch (Exception e) { return false; }
+        }
+
+        @JavascriptInterface
+        public String pasteText() {
+            try {
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip()) return "";
+                ClipData clip = cm.getPrimaryClip();
+                if (clip == null || clip.getItemCount() == 0) return "";
+                CharSequence t = clip.getItemAt(0).coerceToText(MainActivity.this);
+                String out = t == null ? "" : t.toString();
+                return out.length() > 400000 ? "" : out;
+            } catch (Exception e) { return ""; }
+        }
+
+        @JavascriptInterface
+        public String appVersion() { return "1.4.1"; }
     }
 }

@@ -19,7 +19,7 @@ echo "1/6 compilando recursos"
 echo "2/6 empacotando manifest + recursos + telas"
 "$BT/aapt2" link -o "$OUT/base.apk" -I "$PLATFORM" --manifest "$OUT/AndroidManifest.xml" \
   -A "$SRC/assets" --java "$OUT/gen" --min-sdk-version 24 --target-sdk-version 34 \
-  --version-code 5 --version-name 1.3.1 "$OUT/res/res.zip"
+  --version-code 7 --version-name 1.4.1 "$OUT/res/res.zip"
 echo "3/6 compilando Java"
 javac -source 17 -target 17 -encoding UTF-8 -nowarn -classpath "$PLATFORM" -d "$OUT/classes" \
   $(find "$SRC/java" "$OUT/gen" -name '*.java')

@@ -5,8 +5,8 @@ W = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'app', 'src',
 r = lambda n: open(os.path.join(W, n), encoding='utf-8').read()
 h = r('index.html')
 h = h.replace('<link rel="stylesheet" href="app.css">', '<style>\n' + r('app.css') + '\n</style>')
-for n in ('foods.js', 'core.js', 'app.js'):
+for n in ('foods.js', 'core.js', 'setup.js', 'app.js'):
     h = h.replace('<script src="%s"></script>' % n, '<script>\n' + r(n).replace('</script', '<\\/script') + '\n</script>')
-assert 'src="' not in re.sub(r'<img[^>]*>', '', h) or True
+assert '<script src=' not in h and 'rel="stylesheet"' not in h, 'sobrou arquivo externo: o HTML de PC precisa ser um arquivo só'
 open(sys.argv[1], 'w', encoding='utf-8').write(h)
 print('ok', len(h))

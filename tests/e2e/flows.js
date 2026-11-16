@@ -20,8 +20,28 @@ async function fresh(opts) {
   p.on('console', m => { if (m.type() === 'error') p.errs.push('console: ' + m.text()); });
   if (opts.init) await p.addInitScript(opts.init);
   await p.goto('file://' + target);
-  if (opts.onboard !== false) { const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click(); }
+  if (opts.onboard !== false && await p.$('[data-act=obDone]')) {
+    await manualStart(p);
+    if (opts.patch === false) return p;
+    // Base fixa para os testes com relógio simulado: programa iniciado em 09/11/2026 (segunda), 115 kg → 90 kg.
+    await p.evaluate(k => {
+      const d = JSON.parse(localStorage.getItem(k));
+      Object.assign(d.profile, { age: 22, sex: 'Masculino', heightCm: 173, startWeight: 115, targetWeight: 90, startDate: '2026-11-09' });
+      d.weights = [{ id: 'w0', date: '2026-11-09', kg: 115, notes: 'Peso de referência inicial' }];
+      d.scheduleHistory = [{ from: '2026-11-09', schedule: Object.assign({}, d.schedule) }];
+      const f = d.foods.find(x => x.name === 'Pão francês');
+      d.meals = [{ id: 'm0', date: '2026-11-09', time: '07:00', type: 'Café da manhã', notes: '', photoIds: [], items: [{ foodId: f.id, name: f.name, amount: 1, unitName: 'unidade (~50 g)', grams: 50, amountLabel: '1 × unidade (~50 g)', estimated: false, kcal: 150, p: 4, c: 29.3, f: 1.55 }] }];
+      localStorage.setItem(k, JSON.stringify(d));
+    }, KEY);
+    await p.reload();
+  }
   return p;
+}
+// Boas-vindas pelo caminho manual ("Prefiro preencher à mão")
+async function manualStart(p, w, tw) {
+  await p.click('#wl-manual summary');
+  await p.fill('#ob-w', String(w || 115)); await p.fill('#ob-tw', String(tw || 90));
+  await p.click('[data-act=obDone]');
 }
 const getDb = p => p.evaluate(k => JSON.parse(localStorage.getItem(k)), KEY);
 const raw = p => p.evaluate(k => localStorage.getItem(k), KEY);
@@ -93,6 +113,7 @@ async function allSets(p) {
   });
   await t('03 excluir refeição (com confirmação)', async () => {
     const p = await fresh();
+    await p.clock.setFixedTime(new Date(2026, 10, 9, 10, 0)); await p.reload(); // a refeição de exemplo é de 09/11
     const m = (await getDb(p)).meals[0];
     await p.click('[data-tab=food]'); await p.click('[data-act=editMeal][data-id="' + m.id + '"]');
     await p.click('[data-act=delMeal]');
@@ -294,7 +315,8 @@ async function allSets(p) {
     await noErrors(p);
   });
   await t('P0.1 ponte Android simulada: saveData=false mostra aviso', async () => {
-    const p = await fresh({ init: () => { window.AndroidBridge = { loadState: () => JSON.stringify({ status: 'missing' }), saveData: () => false, setReminders() { }, listBackups: () => '[]', getPhoto: () => '', toast() { } }; } });
+    const p = await fresh({ patch: false, init: () => { window.AndroidBridge = { loadState: () => JSON.stringify({ status: 'missing' }), saveData: () => !window.__fail, setReminders() { }, listBackups: () => '[]', getPhoto: () => '', toast() { } }; } });
+    await p.evaluate(() => { window.__fail = true; });
     await p.click('[data-act=addWater][data-ml="300"]');
     assert(await p.isVisible('[data-save-error]'), 'sem aviso');
     await noErrors(p);
@@ -674,13 +696,153 @@ async function allSets(p) {
   });
 
   // ---------------------------------------------------------------- regressão
-  await t('R onboarding e histórico alimentar inicial (3 refeições de 09/11, almoço sem quantidades)', async () => {
-    const p = await fresh();
+  // ---------------------------------------------------------------- 1.4: primeira abertura e configuração por IA
+  const SAMPLE = fs.readFileSync(path.join(__dirname, 'setup-exemplo.json'), 'utf8');
+  const clip = { permissions: ['clipboard-read', 'clipboard-write'] };
+  await t('S1 primeira abertura: boas-vindas com os 3 passos, sem abas e sem dados pessoais prontos', async () => {
+    const p = await fresh({ onboard: false });
+    const txt = await p.textContent('#view');
+    assert(txt.includes('Copie o prompt') && txt.includes('Cole na IA') && txt.includes('Cole o código aqui'), 'passos');
+    assert(!(await p.isVisible('#tabbar')) && !(await p.isVisible('#btn-ai')) && !(await p.isVisible('#btn-settings')), 'navegação visível antes de configurar');
+    assert(!(await p.$('#sheet-wrap:not(.hidden)')), 'folha aberta por cima');
+    assert((await raw(p)) == null, 'gravou antes de a pessoa escolher');
+    await noErrors(p);
+  });
+  await t('S2 copiar prompt inicial leva o texto para a área de transferência', async () => {
+    const p = await fresh({ onboard: false, ctx: clip });
+    await p.click('[data-act=promptCopy]');
+    const c = await p.evaluate(() => navigator.clipboard.readText());
+    assert(c.includes('Cyl Gymly') && c.includes('MODELO DO CÓDIGO') && c.includes('"proteinaG"') && c.includes('Pão francês | g | 300 | 8'), 'prompt incompleto');
+    await p.click('.prompt-view summary');
+    assert((await p.inputValue('#wl-prompt')) === c, 'texto visível diferente do copiado');
+    await noErrors(p);
+  });
+  await t('S3 código inválido, cortado ou sem perfil é recusado com mensagem junto ao campo (nada muda)', async () => {
+    const p = await fresh({ onboard: false });
+    for (const [code, re] of [['', /Cole aqui/], ['olá', /Não encontrei/], [SAMPLE.slice(0, 400), /cortado/], ['{"metas":{"kcal":1800}}', /perfil/], ['{"x":1}', /nenhuma seção/]]) {
+      await p.fill('#su-json', code); await p.click('[data-act=setupCheck]');
+      const e = await p.textContent('#su-json-err'); assert(re.test(e), 'mensagem para ' + JSON.stringify(code.slice(0, 20)) + ': ' + e);
+    }
+    assert(await p.$('[data-act=obDone]') && (await raw(p)) == null, 'saiu das boas-vindas');
+    await noErrors(p);
+  });
+  await t('S4 colar o código da IA (com texto em volta) mostra resumo e aplica tudo de uma vez', async () => {
+    const p = await fresh({ onboard: false });
+    await p.clock.setFixedTime(new Date(2026, 10, 16, 10, 0)); await p.reload();
+    await p.fill('#su-json', 'Claro! Aqui está o seu plano:\n```json\n' + SAMPLE + '\n```\nCopie o código acima e cole no Cyl Gymly.');
+    await p.click('[data-act=setupCheck]');
+    const sum = await p.textContent('#sheet');
+    for (const x of ['Marina', '1.850 kcal', 'Treino A — pernas e glúteos', 'Seg, Qui', 'Total do dia', 'proteína 115 de 125 g', '3 alimento(s)']) assert(sum.includes(x), 'resumo sem: ' + x);
+    assert((await raw(p)) == null, 'gravou antes de confirmar');
+    await p.click('[data-act=setupApply]');
     const db = await getDb(p);
-    const ms = db.meals.filter(m => m.date === '2026-11-09');
-    assert(ms.length === 3 && ms.find(m => m.type === 'Almoço').items.every(i => i.grams == null), 'histórico inicial');
-    assert(db.weights.length === 1 && db.weights[0].kg === 115);
-    assert(db.nutritionGoals.length === 0, 'metas inventadas');
+    assert(db.settings.onboarded && db.profile.name === 'Marina' && db.profile.startWeight === 82.4 && db.profile.targetWeight === 70 && db.profile.startDate === '2026-11-16', 'perfil');
+    assert(db.nutritionGoals.length === 1 && db.nutritionGoals[0].protein === 125 && db.nutritionGoals[0].water === 2600, 'metas');
+    assert(db.plans.length === 2 && JSON.stringify(db.schedule) === JSON.stringify({ 1: 'A', 2: 'B', 4: 'A', 5: 'B' }), 'treinos');
+    assert(db.settings.restSeconds === 75 && db.settings.reminders.find(r => r.id === 'treino').enabled && db.settings.reminders.find(r => r.id === 'treino').hour === 18, 'preferências');
+    const whey = db.foods.find(f => f.name === 'Whey protein');
+    assert(whey && whey.p === 80 && whey.kcal === 400 && whey.units[0].g === 30 && db.foods.length === 40, 'alimentos com macros');
+    assert(db.mealPlan.length === 4 && db.mealPlan[1].items[2].foodId && Math.round(db.mealPlan[1].items[2].p) === 48, 'cardápio');
+    assert(!(await p.evaluate(d => window.HCore.validateDb(d).errors.length, db)), 'base inválida');
+    assert(await p.isVisible('#tabbar') && await p.isVisible('#btn-ai') && (await p.textContent('#view')).includes('Treino A — pernas e glúteos'), 'não abriu o início');
+    await p.reload(); assert(!(await p.$('[data-act=obDone]')), 'boas-vindas de novo');
+    await noErrors(p);
+  });
+  await t('S5 caminho manual exige peso atual e desejado e começa com os treinos de exemplo', async () => {
+    const p = await fresh({ onboard: false });
+    await p.click('#wl-manual summary'); await p.click('[data-act=obDone]');
+    assert(await p.$('#ob-w[aria-invalid=true]') && (await raw(p)) == null, 'aceitou sem peso');
+    await p.fill('#ob-name', 'Leo'); await p.fill('#ob-w', '82,5'); await p.fill('#ob-tw', '75'); await p.click('[data-act=obDone]');
+    const db = await getDb(p), today = await p.evaluate(() => window.HCore.today());
+    assert(db.settings.onboarded && db.profile.startWeight === 82.5 && db.profile.startDate === today && db.weights.length === 1 && db.weights[0].kg === 82.5, 'perfil manual');
+    assert(db.meals.length === 0 && db.nutritionGoals.length === 0 && db.medication.name === '', 'veio dado pessoal pronto');
+    assert(db.scheduleHistory.length === 1 && db.scheduleHistory[0].from === today, 'agenda');
+    await noErrors(p);
+  });
+  await t('S6 botão no topo: prompt de atualização leva os dados atuais e o pedido; código novo atualiza com cópia de segurança', async () => {
+    const p = await fresh({ ctx: clip });
+    await p.click('#btn-settings'); await p.fill('#gl-p', '150'); await p.click('[data-act=saveGoals]');
+    await p.click('#btn-ai'); await p.fill('#ai-req', 'quero treinar 4 dias e mais proteína');
+    await p.click('[data-act=promptCopy][data-mode=update]');
+    const c = await p.evaluate(() => navigator.clipboard.readText());
+    for (const x of ['quero treinar 4 dias e mais proteína', 'MINHA CONFIGURAÇÃO ATUAL', '"proteinaG":150', '"pesoInicialKg":115', 'Full Body A', 'RESUMO DO MEU PROGRESSO', 'inicial 115 kg']) assert(c.includes(x), 'prompt sem: ' + x);
+    const before = await getDb(p);
+    await p.fill('#su-json', JSON.stringify({ app: 'CylGymly', formato: 1, perfil: { pesoAtualKg: 113.4 }, metas: { proteinaG: 170, kcal: 2300 }, diasDeTreino: { seg: 'A', ter: 'B', qui: 'C', sab: 'A' } }));
+    await p.click('[data-act=setupCheck]');
+    assert((await p.textContent('#sheet')).includes('113,4 kg') && JSON.stringify(await getDb(p)) === JSON.stringify(before), 'mudou antes de confirmar');
+    await p.click('[data-act=setupApply]');
+    const db = await getDb(p), g = db.nutritionGoals[db.nutritionGoals.length - 1];
+    assert(g.protein === 170 && g.kcal === 2300 && JSON.stringify(db.schedule) === JSON.stringify({ 1: 'A', 2: 'B', 4: 'C', 6: 'A' }), 'não aplicou');
+    assert(db.profile.startWeight === 115 && db.weights.length === 2 && db.weights[1].kg === 113.4, 'peso');
+    assert(db.plans.length === 3 && db.meals.length === before.meals.length && db.foods.length === before.foods.length, 'apagou o que não veio no código');
+    const bk = await p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('ts-backup-pre-setup-')));
+    assert(bk.length === 1, 'sem cópia de segurança');
+    await p.click('#btn-settings'); await p.click('[data-act=localBackups]');
+    assert((await p.textContent('#sheet')).includes('Antes de aplicar uma configuração'), 'cópia não aparece para restaurar');
+    await noErrors(p);
+  });
+  await t('S7 sem os dados de saúde, o prompt de atualização não leva tratamento nem sintomas', async () => {
+    const p = await fresh();
+    await p.click('[data-tab=health]'); await p.click('[data-act=editMed]'); await p.fill('#md-name', 'Remédio Zeta'); await p.fill('#md-dose', '5 mg'); await p.click('[data-act=saveMed]');
+    assert((await p.textContent('#view')).includes('Remédio Zeta'), 'nome do tratamento não aparece');
+    await p.click('#btn-ai'); await p.click('.prompt-view summary');
+    assert((await p.inputValue('#ai-prompt')).includes('Remédio Zeta'), 'com saúde: faltou');
+    await p.uncheck('#ai-health');
+    const q = await p.inputValue('#ai-prompt');
+    assert(!q.includes('Remédio Zeta') && !q.includes('5 mg') && !q.includes('"tratamento":{'), 'vazou dado de saúde');
+    await noErrors(p);
+  });
+  await t('S8 cardápio: mostra proteína e demais valores por item e registra a refeição no dia', async () => {
+    const p = await fresh();
+    await p.click('#btn-ai'); await p.fill('#su-json', SAMPLE); await p.click('[data-act=setupCheck]'); await p.click('[data-act=setupApply]');
+    await p.click('[data-tab=food]');
+    const card = await p.textContent('[data-mealplan]');
+    for (const x of ['Cardápio sugerido', '146 kcal · P 13,3 g · C 0,6 g · G 9,5 g', 'Total do cardápio', 'proteína 115 de 125 g']) assert(card.includes(x), 'cardápio sem: ' + x);
+    const plan = (await getDb(p)).mealPlan[1];
+    await p.click('[data-act=planMealLog][data-id="' + plan.id + '"]');
+    assert((await p.textContent('#sheet')).includes('Peito de frango grelhado sem pele'), 'editor sem os itens');
+    await p.click('[data-act=editItem][data-i="2"]'); assert((await p.inputValue('#q-amt')) === '150', 'quantidade não veio'); await p.click('[data-act=qtySave]');
+    await p.click('[data-act=saveMeal]');
+    const db = await getDb(p), m = db.meals[db.meals.length - 1];
+    assert(m.type === 'Almoço' && m.planId === plan.id && m.items.length === 4 && Math.round(m.items.reduce((a, i) => a + i.p, 0)) === 56, 'refeição registrada errada');
+    assert((await p.textContent('[data-act=planMealLog][data-id="' + plan.id + '"]')).includes('Registrada'), 'não marcou como registrada');
+    await p.click('[data-mealplan] summary').catch(() => { }); if (!(await p.isVisible('[data-act=planClear]'))) await p.click('[data-mealplan] summary');
+    await p.click('[data-act=planClear]'); await p.click('[data-act=confirmOk]');
+    const db2 = await getDb(p); assert(db2.mealPlan.length === 0 && db2.meals.length === db.meals.length, 'remover cardápio');
+    await noErrors(p);
+  });
+  await t('S9 conteúdo malicioso no código da IA e em séries de treino aparece como texto', async () => {
+    const p = await fresh();
+    await p.evaluate(k => { const d = JSON.parse(localStorage.getItem(k)); d.sessions.push({ id: 'sx', date: '2026-11-09', planId: 'A', planName: 'Full Body A', status: 'concluida', exercises: [{ name: 'Leg press', sets: [{ kg: '<img src=x onerror="window.__x=1">', reps: '<b id=inj>1</b>', done: true }] }] }); localStorage.setItem(k, JSON.stringify(d)); }, KEY);
+    await p.reload();
+    await p.click('[data-tab=train]'); await p.click('[data-act=viewSession][data-id=sx]');
+    assert(!(await p.$('#sheet img')) && !(await p.$('#inj')), 'HTML injetado na sessão');
+    await p.click('[data-act=closeSheet]'); await p.click('[data-tab=progress]'); await p.click('[data-act=prog][data-k=forca]');
+    assert(!(await p.$('#view img')) && !(await p.$('#inj')), 'HTML injetado em Força');
+    const evil = '<img src=x onerror="window.__x=1">';
+    await p.click('#btn-ai');
+    await p.fill('#su-json', JSON.stringify({ perfil: { nome: evil }, planos: [{ id: 'A', nome: evil, aquecimento: evil, orientacoes: evil, exercicios: [{ nome: evil, series: 2, repeticoes: evil }] }], diasDeTreino: { seg: 'A' }, tratamento: { medicamento: evil, dosePrescrita: evil },
+      alimentos: [{ nome: evil, kcal: 100, proteinaG: 10, carboidratosG: 10, gordurasG: 2, medidas: [{ nome: evil, gramas: 10 }] }], cardapio: [{ refeicao: evil, observacoes: evil, itens: [{ alimento: evil, quantidade: evil, gramas: 50 }, { alimento: evil + '2', quantidade: evil, kcal: 10 }] }], lembretes: [{ id: 'treino', ativo: true, titulo: evil, texto: evil }] }));
+    await p.click('[data-act=setupCheck]'); assert(!(await p.$('#sheet img')), 'HTML no resumo'); await p.click('[data-act=setupApply]');
+    for (const tab of ['home', 'food', 'daily', 'train', 'progress', 'health']) { await p.click('[data-tab=' + tab + ']'); assert(!(await p.$('#view img')), 'HTML injetado em ' + tab); }
+    await p.click('#btn-settings'); assert(!(await p.$('#view img')), 'HTML em configurações');
+    assert(!(await p.evaluate(() => window.__x)), 'script executou');
+    await noErrors(p);
+  });
+  await t('S10 boas-vindas e folha de IA sem rolagem horizontal em tela estreita (320 px)', async () => {
+    const p = await fresh({ onboard: false, ctx: { viewport: { width: 320, height: 640 } } });
+    const over = () => p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert((await over()) <= 0, 'boas-vindas: ' + await over());
+    await manualStart(p); await p.click('#btn-ai');
+    assert((await over()) <= 0 && await p.evaluate(() => { const s = document.querySelector('#sheet'); return s.scrollWidth <= s.clientWidth; }), 'folha de IA');
+    await noErrors(p);
+  });
+  await t('S11 computador (1280 px): menu lateral e as mesmas ações', async () => {
+    const p = await fresh({ ctx: { viewport: { width: 1280, height: 800 } } });
+    const box = await p.locator('#tabbar').boundingBox();
+    assert(box.x === 0 && box.width < 300 && box.height > 500, 'menu não está na lateral');
+    await p.click('[data-tab=food]'); await p.click('#btn-ai');
+    const sb = await p.locator('#sheet').boundingBox(); assert(sb.x > 200 && sb.y > 20, 'folha não centralizada');
     await noErrors(p);
   });
   await t('R treinos A/B/C e dias seg/qua/sex sem horários', async () => {
@@ -758,7 +920,7 @@ async function allSets(p) {
     const ctx = await browser.newContext({ offline: true }); const p = await ctx.newPage();
     const net = []; p.on('request', r => { if (!r.url().startsWith('file:') && !r.url().startsWith('data:')) net.push(r.url()); });
     p.errs = []; p.on('pageerror', e => p.errs.push(e.message));
-    await p.goto('file://' + target); await p.click('[data-act=obDone]');
+    await p.goto('file://' + target); await manualStart(p);
     for (const tab of ['food', 'train', 'progress', 'health', 'home']) await p.click('[data-tab=' + tab + ']');
     await p.click('#btn-settings');
     assert(!net.length, 'rede: ' + net.join());
@@ -776,6 +938,32 @@ async function allSets(p) {
     await p.click('[data-tab=train]');
     const over = await p.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     assert(!over, 'rolagem horizontal em 320px');
+    await noErrors(p);
+  });
+  await t('U1 seletor de unidade da carga (kg / lb): troca, persiste e aparece no histórico e na evolução', async () => {
+    const p = await fresh();
+    await checkin(p);
+    assert(await p.inputValue('[data-change=exUnit]') === 'kg', 'padrão deveria ser kg');
+    await p.selectOption('[data-change=exUnit]', 'lb');
+    assert(await p.getAttribute('[data-set="0:0:kg"]', 'placeholder') === 'lb', 'campo não mudou para lb');
+    await p.fill('[data-set="0:0:kg"]', '90'); await p.fill('[data-set="0:0:reps"]', '12');
+    await p.reload(); await p.click('[data-tab=train]'); await p.click('[data-act=openSession]');
+    assert(await p.inputValue('[data-change=exUnit]') === 'lb', 'unidade perdida ao reabrir');
+    await p.click('[data-act=toggleSet] >> nth=0');
+    if (await p.isVisible('#rest')) await p.click('[data-act=restStop]');
+    await allSets(p);
+    await p.click('[data-act=finishSession]'); await p.click('[data-act=finishSave]');
+    const d = await getDb(p), s = d.sessions[d.sessions.length - 1];
+    assert(s.exercises[0].unit === 'lb' && s.exercises[0].sets[0].kg === '90', 'unidade/valor não gravados');
+    assert(s.exercises[1].unit === 'kg', 'os outros exercícios deveriam continuar em kg');
+    const v = await p.evaluate(k => window.HCore.validateDb(JSON.parse(localStorage.getItem(k))).errors, KEY);
+    assert(v.length === 0, 'base inválida: ' + v.join());
+    await p.click('[data-tab=progress]');
+    await p.click('text=Força');
+    const txt = await p.textContent('main');
+    assert(/Maior carga por sessão \(lb\)/.test(txt) && /90 lb×12/.test(txt), 'evolução não mostra lb');
+    await p.setViewportSize({ width: 320, height: 640 });
+    assert(!(await p.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)), 'rolagem horizontal em 320px');
     await noErrors(p);
   });
   await t('A11y fonte ampliada (200%) sem rolagem horizontal', async () => {

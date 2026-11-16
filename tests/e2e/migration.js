@@ -44,12 +44,15 @@ const KEY = 'treinosaude-data';
   };
   for (const k of ['meals', 'sessions', 'weights', 'foods', 'plans', 'nutritionGoals', 'symptomLogs', 'medLogs', 'energyLogs', 'reviews', 'profile', 'schedule', 'medication'])
     out.preserved[k] = JSON.stringify(after[k]) === JSON.stringify(a[k]);
+  // estrutura 3: o tratamento ganhou "name" (dados antigos mantêm o nome que a pessoa já via); o resto fica igual
+  out.preserved.medication = after.medication.name === 'Mounjaro (tirzepatida)' && JSON.stringify(Object.assign({}, after.medication, { name: undefined })) === JSON.stringify(a.medication);
+  out.preserved.mealPlan = Array.isArray(after.mealPlan) && after.mealPlan.length === 0;
   out.preserved.water = JSON.stringify(after.water.slice(0, a.water.length)) === JSON.stringify(a.water) && after.water.length === a.water.length + 1;
   if (!out.preserved.meals) out.meals_diff = a.meals.map((m, i) => { const n = after.meals[i]; const d = {}; Object.keys(Object.assign({}, m, n)).forEach(k => { if (JSON.stringify(m[k]) !== JSON.stringify(n && n[k])) d[k] = [m[k], n && n[k]]; }); return d; }).filter(d => Object.keys(d).length);
   out.photo_still_present = await p.evaluate(() => localStorage.getItem('ts-photo-pold1') === 'data:image/jpeg;base64,AAAA');
   out.page_errors = errs; out.old_app_errors = oldErrs;
   console.log(JSON.stringify(out, null, 2));
-  const ok = out.v1_version === 1 && !out.recovery_shown && !out.onboarding_shown_again && out.new_version === 2 && out.scheduleHistory_added && !out.validation_errors.length && Object.values(out.preserved).every(Boolean) && out.photo_still_present && !errs.length;
+  const ok = out.v1_version === 1 && !out.recovery_shown && !out.onboarding_shown_again && out.new_version === 3 && out.scheduleHistory_added && !out.validation_errors.length && Object.values(out.preserved).every(Boolean) && out.photo_still_present && !errs.length;
   console.log(ok ? 'MIGRAÇÃO OK' : 'MIGRAÇÃO FALHOU');
   await b.close();
   process.exit(ok ? 0 : 1);

@@ -202,6 +202,19 @@ test('força: carga digitada inválida é ignorada, não vira zero', () => {
   const e = H.exerciseEntries(db, 'Supino')[0];
   assert.equal(e.topKg, 20); assert.equal(e.repsAtTop, 10);
 });
+test('força: carga em lb é convertida para kg nas comparações e mantém o valor digitado', () => {
+  const lb = ex('2026-11-11', [[100, 12]]); lb.exercises[0].unit = 'lb';
+  const db = baseDb({ sessions: [ex('2026-11-09', [[40, 12]]), lb, ex('2026-11-13', [[50, 12]])] });
+  const e = H.exerciseEntries(db, 'Supino');
+  assert.equal(e[1].unit, 'lb'); assert.equal(e[1].topLoad, 100); assert.equal(e[1].topKg, 45.36);
+  assert.equal(e[0].unit, 'kg'); assert.equal(e[0].topLoad, 40);
+  assert.equal(H.compareEntries(e[0], e[1]), 'melhor');   // 100 lb (45,4 kg) > 40 kg
+  assert.equal(H.compareEntries(e[1], e[2]), 'melhor');   // 50 kg > 100 lb
+  assert.equal(H.fromKg(H.toKg(100, 'lb'), 'lb'), 100);
+  assert.equal(H.validateDb(db).errors.length, 0);
+  lb.exercises[0].unit = 'pedras';
+  assert.ok(H.validateDb(db).errors.some(x => /unidade de carga/.test(x)));
+});
 test('força: dados insuficientes e queda persistente', () => {
   assert.equal(H.strengthTrend([]).status, 'insuficiente');
   assert.equal(H.strengthTrend([{ topKg: 20, repsAtTop: 12, nSets: 2 }]).status, 'insuficiente');
@@ -243,7 +256,7 @@ test('migração: não destrutiva e idempotente', () => {
   const snap = JSON.stringify(v1);
   const m = H.migrate(v1);
   assert.equal(JSON.stringify(v1), snap, 'original intacto');
-  assert.equal(m.version, 2); assert.equal(m.settings.theme, 'auto');
+  assert.equal(m.version, 3); assert.equal(m.settings.theme, 'auto'); assert.deepEqual(m.mealPlan, []);
   assert.deepEqual(m.scheduleHistory, [{ from: '2026-11-09', schedule: v1.schedule }]);
   assert.deepEqual(m.meals, v1.meals);
   assert.deepEqual(H.migrate(m), m);
@@ -267,7 +280,7 @@ test('backup: válido devolve resumo, migra e filtra fotos inválidas', () => {
   assert.equal(r.summary.firstDate, '2026-11-09'); assert.equal(r.summary.lastDate, '2026-11-10');
   assert.deepEqual(Object.keys(r.photos), ['p1']);
   assert.deepEqual(r.summary.photoRefsMissingInFile, ['p2']);
-  assert.equal(r.data.version, 2);
+  assert.equal(r.data.version, 3);
   assert.ok(r.warnings.some(w => /foto/.test(w)));
 });
 test('backup: formato antigo (v1.0, sem "format") continua aceito', () => {
