@@ -4,15 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cyl Gymly</title>
+<meta name="theme-color" content="#0f766e">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div id="save-error" class="save-error hidden" data-save-error role="alert"><span>Falha ao salvar</span><button type="button" id="save-retry">Tentar de novo</button></div>
 <header class="topbar">
   <h1 id="title">Cyl Gymly</h1>
-  <button class="icon-btn" id="btn-settings" aria-label="Configurações">
+  <span class="topbar-actions">
+  <button class="ai-btn" id="btn-ai" type="button" aria-label="Configurar com IA: gerar prompt ou colar código">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M10 2l1.8 5.2L17 9l-5.2 1.8L10 16l-1.8-5.2L3 9l5.2-1.8zM18 13l1 2.9 3 1.1-3 1-1 3-1-3-3-1 3-1.1z"/></svg><span>Prompt IA</span>
+  </button>
+  <button class="icon-btn" id="btn-settings" type="button" aria-label="Configurações">
     <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.6c-.6.3-1.2.6-1.7 1l-2.5-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
   </button>
+  </span>
 </header>
 <main id="view"></main>
 <nav class="tabbar" id="tabbar" aria-label="Seções">
@@ -29,6 +35,7 @@
 <div id="pip" class="pip" aria-live="polite"></div>
 <script src="foods.js"></script>
 <script src="core.js"></script>
+<script src="setup.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

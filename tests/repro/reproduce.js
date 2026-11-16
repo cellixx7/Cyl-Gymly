@@ -18,7 +18,7 @@ const target = process.argv[2];
   {
     const p = await fresh(() => { if (!sessionStorage.getItem('x')) { localStorage.setItem('treinosaude-data', '{"app":"TreinoSaude","meals":[{"id":"m1"'); sessionStorage.setItem('x', '1'); } });
     const before = await p.evaluate(() => localStorage.getItem('treinosaude-data'));
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     const btn = await p.$('[data-act=addWater]'); if (btn) await btn.click();
     const after = await p.evaluate(() => localStorage.getItem('treinosaude-data'));
     res.R1_corrupt_storage_overwritten = before !== after;
@@ -28,7 +28,7 @@ const target = process.argv[2];
   // R2 falha de gravação no Android (bridge simulada)
   {
     const p = await fresh(() => { window.AndroidBridge = { loadData: () => '', loadState: () => JSON.stringify({ status: 'missing' }), saveData: () => false, setReminders() {}, listBackups: () => '[]', getPhoto: () => '', toast() {} }; });
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     await p.click('[data-act=addWater]');
     await p.waitForTimeout(3500);
     res.R2_persistent_save_error_visible = await p.evaluate(() => !!document.querySelector('[data-save-error]:not(.hidden)'));
@@ -37,7 +37,7 @@ const target = process.argv[2];
   // R3 backup inválido (tipos errados)
   {
     const p = await fresh();
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     const before = await p.evaluate(() => localStorage.getItem('treinosaude-data'));
     await p.evaluate(() => window.onImportFile(JSON.stringify({ app: 'TreinoSaude', data: { profile: {}, meals: 'x', weights: [{ kg: 'abc', date: 'ontem' }] } })));
     const ok = await p.$('[data-act=confirmOk]'); if (ok) await ok.click();
@@ -50,7 +50,7 @@ const target = process.argv[2];
   // R4 XSS via backup (id de plano e data de exportação)
   {
     const p = await fresh();
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     const data = await p.evaluate(() => JSON.parse(localStorage.getItem('treinosaude-data')));
     data.plans[0].id = 'A"><img src=x onerror="window.__xss=1">';
     data.schedule = { 1: data.plans[0].id };
@@ -66,7 +66,7 @@ const target = process.argv[2];
   // R5 item manual só com calorias
   {
     const p = await fresh();
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     await p.click('[data-tab=food]'); await p.click('[data-act=newMeal]'); await p.click('[data-act=mealManual]');
     await p.fill('#mi-name', 'Marmita'); await p.fill('#mi-k', '600'); await p.click('[data-act=manualSave]'); await p.click('[data-act=saveMeal]');
     const item = await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('treinosaude-data')); const m = d.meals.find(x => x.items.some(i => i.name === 'Marmita')); return m.items.find(i => i.name === 'Marmita'); });
@@ -76,7 +76,7 @@ const target = process.argv[2];
   // R6 frequência: 2 treinos no mesmo dia + 1 extra
   {
     const p = await fresh();
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     await p.evaluate(() => {
       const d = JSON.parse(localStorage.getItem('treinosaude-data'));
       const mk = (date, st) => ({ id: Math.random().toString(36).slice(2), date, planId: 'A', planName: 'Full Body A', status: st, exercises: [], notes: '', startedAt: date });
@@ -93,7 +93,7 @@ const target = process.argv[2];
   // R8 foto adicionada e edição cancelada -> foto órfã
   {
     const p = await fresh();
-    const ob = await p.$('[data-act=obDone]'); if (ob) await ob.click();
+    if (await p.$('[data-act=obDone]')) { await p.click('#wl-manual summary'); await p.fill('#ob-w', '115'); await p.fill('#ob-tw', '90'); await p.click('[data-act=obDone]'); }
     await p.click('[data-tab=food]'); await p.click('[data-act=newMeal]');
     await p.evaluate(() => { localStorage.setItem('ts-photo-p123', 'data:image/jpeg;base64,AAAA'); window.onPhoto('p123'); });
     await p.click('[data-act=closeSheet]');

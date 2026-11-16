@@ -1,0 +1,37 @@
+{
+  "app": "CylGymly", "tipo": "configuracao", "formato": 1,
+  "perfil": { "nome": "Marina", "idade": 31, "sexo": "Feminino", "alturaCm": 166, "pesoInicialKg": 82.4, "pesoAtualKg": 82.4, "pesoDesejadoKg": 70, "dataInicio": "2026-11-16" },
+  "metas": { "kcal": 1850, "proteinaG": 125, "carboidratosG": 190, "gordurasG": 62, "aguaMl": 2600 },
+  "planos": [
+    { "id": "A", "nome": "Treino A — pernas e glúteos", "aquecimento": "5 minutos de esteira leve", "orientacoes": "Descanso de 75 s. Pare com 2 repetições de sobra.",
+      "exercicios": [ { "nome": "Leg press", "series": 3, "repeticoes": "10-12" }, { "nome": "Cadeira extensora", "series": 3, "repeticoes": "12" }, { "nome": "Mesa flexora", "series": 3, "repeticoes": "12" }, { "nome": "Elevação pélvica", "series": 3, "repeticoes": "12" } ] },
+    { "id": "B", "nome": "Treino B — superiores", "aquecimento": "5 minutos de elíptico", "orientacoes": "",
+      "exercicios": [ { "nome": "Supino máquina", "series": 3, "repeticoes": "10" }, { "nome": "Puxada frontal", "series": 3, "repeticoes": "10-12" }, { "nome": "Remada baixa", "series": 3, "repeticoes": "12" }, { "nome": "Elevação lateral", "series": 2, "repeticoes": "15" } ] }
+  ],
+  "diasDeTreino": { "seg": "A", "ter": "B", "qua": null, "qui": "A", "sex": "B", "sab": null, "dom": null },
+  "descanso": { "ativo": true, "modo": "fixo", "segundos": 75 },
+  "lembretes": [ { "id": "treino", "ativo": true, "horario": "18:30", "dias": ["seg", "ter", "qui", "sex"] }, { "id": "agua", "ativo": true, "horario": "15:00", "dias": [] } ],
+  "alimentos": [
+    { "nome": "Iogurte grego natural", "base": "g", "kcal": 97, "proteinaG": 9, "carboidratosG": 3.9, "gordurasG": 5, "medidas": [ { "nome": "pote", "gramas": 100 } ] },
+    { "nome": "Tapioca (goma hidratada)", "base": "g", "kcal": 240, "proteinaG": 0, "carboidratosG": 60, "gordurasG": 0, "medidas": [ { "nome": "colher de sopa", "gramas": 20 } ] },
+    { "nome": "Whey protein", "base": "g", "kcal": 400, "proteinaG": 80, "carboidratosG": 8, "gordurasG": 6, "medidas": [ { "nome": "scoop", "gramas": 30 } ] }
+  ],
+  "cardapio": [
+    { "refeicao": "Café da manhã", "horario": "07:00", "itens": [
+      { "alimento": "Ovo cozido", "quantidade": "2 unidades", "gramas": 100, "kcal": 146, "proteinaG": 13.3, "carboidratosG": 0.6, "gordurasG": 9.5 },
+      { "alimento": "Tapioca (goma hidratada)", "quantidade": "3 colheres de sopa", "gramas": 60, "kcal": 144, "proteinaG": 0, "carboidratosG": 36, "gordurasG": 0 },
+      { "alimento": "Café coado (sem açúcar)", "quantidade": "1 xícara", "gramas": 150, "kcal": 14, "proteinaG": 1, "carboidratosG": 2.3, "gordurasG": 0.2 } ] },
+    { "refeicao": "Almoço", "horario": "12:30", "itens": [
+      { "alimento": "Arroz branco cozido", "quantidade": "4 colheres de sopa", "gramas": 100, "kcal": 128, "proteinaG": 2.5, "carboidratosG": 28.1, "gordurasG": 0.2 },
+      { "alimento": "Feijão carioca cozido", "quantidade": "1 concha", "gramas": 100, "kcal": 76, "proteinaG": 4.8, "carboidratosG": 13.6, "gordurasG": 0.5 },
+      { "alimento": "Peito de frango grelhado sem pele", "quantidade": "1 filé grande", "gramas": 150, "kcal": 239, "proteinaG": 48, "carboidratosG": 0, "gordurasG": 3.8 },
+      { "alimento": "Salada de folhas com azeite", "quantidade": "1 prato", "kcal": 60, "proteinaG": 1, "carboidratosG": 3, "gordurasG": 5 } ] },
+    { "refeicao": "Lanche da tarde", "horario": "16:00", "itens": [
+      { "alimento": "Iogurte grego natural", "quantidade": "1 pote", "gramas": 100, "kcal": 97, "proteinaG": 9, "carboidratosG": 3.9, "gordurasG": 5 },
+      { "alimento": "Banana prata", "quantidade": "1 unidade", "gramas": 70, "kcal": 69, "proteinaG": 0.9, "carboidratosG": 18.2, "gordurasG": 0.1 } ] },
+    { "refeicao": "Jantar", "horario": "19:30", "itens": [
+      { "alimento": "Carne moída (acém) cozida", "quantidade": "5 colheres de sopa", "gramas": 125, "kcal": 265, "proteinaG": 33.4, "carboidratosG": 0, "gordurasG": 13.6 },
+      { "alimento": "Batata inglesa cozida", "quantidade": "1 unidade média", "gramas": 130, "kcal": 68, "proteinaG": 1.6, "carboidratosG": 15.5, "gordurasG": 0 } ] }
+  ],
+  "tema": "auto"
+}

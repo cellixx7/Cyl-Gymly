@@ -1,6 +1,7 @@
-/* Treino & Saúde — app pessoal offline.
- * Todos os dados ficam no celular (arquivo interno do app). Nada é enviado para a internet.
- * O app não sugere metas numéricas de nutrição e nunca recomenda doses de medicamento.
+/* Cyl Gymly (antes Healthym / Treino & Saúde) — app offline de treino, alimentação e saúde.
+ * Todos os dados ficam no aparelho (arquivo interno do app). Nada é enviado para a internet.
+ * O app não calcula metas de nutrição nem recomenda doses de medicamento. A configuração por IA
+ * funciona por copiar e colar: o app monta um prompt e lê o código que a IA devolver (setup.js).
  */
 (function () {
 'use strict';
@@ -11,7 +12,7 @@ const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 
 // ---------------------------------------------------------------- utilidades (regras em core.js)
-const H = window.HCore;
+const H = window.HCore, HS = window.HSetup;
 const pad = H.pad, isoDate = H.isoDate, today = H.today, nowTime = H.nowTime, parseD = H.parseD, addDays = H.addDays,
   diffDays = H.diffDays, wd = H.wd, weekStart = H.weekStart, esc = H.esc, num = H.num;
 const WD_SHORT = ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
@@ -30,7 +31,7 @@ const byDate = (a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.tim
 const fmtNum = n => n == null ? '' : String(n).replace('.', ',');
 
 // ---------------------------------------------------------------- dados
-const MEAL_TYPES = ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia', 'Pré-treino', 'Pós-treino', 'Outro'];
+const MEAL_TYPES = HS.MEAL_TYPES;
 const SYMPTOMS = [
   ['nausea', 'Náusea / enjoo'], ['saciedade', 'Saciedade precoce'], ['apetite_baixo', 'Apetite muito reduzido'],
   ['constipacao', 'Constipação (intestino preso)'], ['diarreia', 'Diarreia'], ['refluxo', 'Refluxo / azia'],
@@ -58,12 +59,13 @@ function freshDb() {
   const schedule = { 1: 'A', 3: 'B', 5: 'C' };
   return {
     app: 'TreinoSaude', version: H.DB_VERSION, createdAt: new Date().toISOString(),
-    profile: { name: '', age: 22, sex: 'Masculino', heightCm: 173, startWeight: 115, targetWeight: 90, startDate: '2026-11-09', firstReview: '2026-12-07' },
+    // peso inicial e desejado são só marcadores: a tela de boas-vindas pede os valores reais antes de liberar o app
+    profile: { name: '', age: null, sex: '', heightCm: null, startWeight: 80, targetWeight: 75, startDate: today() },
     nutritionGoals: [], // histórico: {from, kcal, protein, carbs, fat, water}
-    foods, meals: [], water: [], plans,
-    schedule, scheduleHistory: [{ from: '2026-11-09', schedule: Object.assign({}, schedule) }],
+    foods, meals: [], mealPlan: [], water: [], plans,
+    schedule, scheduleHistory: [{ from: today(), schedule: Object.assign({}, schedule) }],
     sessions: [], weights: [], measurements: [],
-    medication: { startDate: '', weekday: '', doseText: '', notes: '' },
+    medication: { name: '', startDate: '', weekday: '', doseText: '', notes: '' },
     medLogs: [], symptomLogs: [], energyLogs: [], reviews: [],
     settings: { restEnabled: true, restSeconds: 90, reminders: defaultReminders(), onboarded: false, theme: 'auto' }
   };
@@ -86,6 +88,7 @@ function ensureShape(d) {
   for (const k of Object.keys(base.profile)) if (d.profile[k] === undefined) d.profile[k] = base.profile[k];
   for (const k of Object.keys(base.settings)) if (d.settings[k] === undefined) d.settings[k] = base.settings[k];
   if (!d.medication || typeof d.medication !== 'object') d.medication = base.medication;
+  if (d.medication.name === undefined) d.medication.name = '';
   return d;
 }
 
@@ -260,14 +263,17 @@ function confirmBox(msg, okLabel, onOk, danger, opts) {
   opts = opts || {};
   openSheet({ title: opts.title || 'Confirmar', render: () => (opts.html || '<p>' + esc(msg) + '</p>') + '<div class="btns"><button class="btn ghost" data-act="closeSheet">Cancelar</button><button class="btn ' + (danger ? 'danger' : '') + '" data-act="confirmOk">' + esc(okLabel) + '</button></div>', ok: onOk, onClose: opts.onCancel ? (why => { if (!confirmBox._ok) opts.onCancel(why); confirmBox._ok = false; }) : null });
 }
+const needsSetup = () => !store.recovery && db && !db.settings.onboarded;
 function go(tab) {
   flushPending();
+  if (needsSetup()) tab = 'welcome';
   if (tab === 'daily') { const r = db.sessions.find(s => s.status === 'em_andamento'); if (r) { tab = 'session'; ui.sessionId = r.id; } }
   ui.tab = tab; closeSheet(); render(); window.scrollTo(0, 0);
 }
 
 window.appBack = function () {
   if (sheet) { closeSheet(); return true; }
+  if (ui.tab === 'welcome') return false;
   if (ui.tab === 'session') { go('home'); return true; }
   if (ui.tab !== 'home') { go('home'); return true; }
   return false;
@@ -370,16 +376,20 @@ const tOf = s => parseD(s).getTime();
 
 // ---------------------------------------------------------------- render principal
 const VIEWS = {};
-const APP_NAME = 'Cyl Gymly';
+const APP_NAME = 'Cyl Gymly', APP_VERSION = '1.4.0';
 function render() {
   flushPending();
   applyTheme();
   if (store.recovery) { renderRecovery(); return; }
-  $('#tabbar').classList.remove('hidden');
+  const setup = needsSetup();
+  if (setup) ui.tab = 'welcome'; else if (ui.tab === 'welcome') ui.tab = 'home';
+  document.body.classList.toggle('first-run', setup);
+  $('#tabbar').classList.toggle('hidden', setup);
   $$('#tabbar button').forEach(b => { const on = b.dataset.tab === ui.tab || (ui.tab === 'session' && b.dataset.tab === 'daily'); b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-  const titles = { home: APP_NAME, food: 'Alimentação', train: 'Treino', daily: 'Treino diário', session: 'Treino diário', progress: 'Evolução', health: 'Saúde', settings: 'Configurações' };
+  const titles = { welcome: APP_NAME, home: APP_NAME, food: 'Alimentação', train: 'Treino', daily: 'Treino diário', session: 'Treino diário', progress: 'Evolução', health: 'Saúde', settings: 'Configurações' };
   $('#title').textContent = titles[ui.tab] || APP_NAME;
   $('#view').innerHTML = VIEWS[ui.tab]();
+  $('#view').className = 'view-' + ui.tab;
   enhanceA11y($('#view'));
   if (VIEWS[ui.tab + 'Mounted']) VIEWS[ui.tab + 'Mounted']();
   workoutSync();
@@ -392,7 +402,7 @@ function applyTheme() {
 // ---- tela de recuperação (dados ilegíveis): nada é gravado até o usuário decidir
 function renderRecovery() {
   const r = store.recovery;
-  $('#tabbar').classList.add('hidden');
+  $('#tabbar').classList.add('hidden'); document.body.classList.add('first-run');
   $('#title').textContent = APP_NAME + ' — recuperação';
   let backups = [];
   backups = restorableBackups();
@@ -410,11 +420,11 @@ function restorableBackups() {
   let all = [];
   try { all = B ? JSON.parse(B.listBackups()) : webBackups(); } catch (e) { all = []; }
   const by = p => all.filter(n => n.startsWith(p)).sort().reverse();
-  return by('backup-').concat(by('pre-restore-'));
+  return by('backup-').concat(by('pre-restore-'), by('pre-setup-'));
 }
 function backupLabel(n) {
   const m = String(n).match(/(\d{4})-(\d{2})-(\d{2})(?:-(\d{2})(\d{2})(\d{2}))?/);
-  const kind = /^pre-restore/.test(n) ? 'Antes de uma restauração · ' : /^corrupt/.test(n) ? 'Conteúdo ilegível · ' : 'Cópia do dia · ';
+  const kind = /^pre-restore/.test(n) ? 'Antes de uma restauração · ' : /^pre-setup/.test(n) ? 'Antes de aplicar uma configuração · ' : /^corrupt/.test(n) ? 'Conteúdo ilegível · ' : 'Cópia do dia · ';
   return kind + (m ? m[3] + '/' + m[2] + '/' + m[1] + (m[4] ? ' ' + m[4] + ':' + m[5] : '') : n);
 }
 // No navegador as cópias de segurança ficam no próprio armazenamento do navegador
@@ -439,7 +449,7 @@ VIEWS.home = function () {
   const ws = weekStats(weekStart(t));
   let h = '<p class="muted" style="margin:4px 0 0">' + fmtLong(t) + (p.name ? ' · Olá, ' + esc(p.name) : '') + '</p>';
 
-  if (!hasGoals(g)) h += '<div class="card warn small"><b>Metas nutricionais ainda não definidas.</b> Defina os valores (de preferência com seu nutricionista ou médico) em <a href="#" data-act="goSettings">Configurações</a>. Até lá, o app mostra só os totais.</div>';
+  if (!hasGoals(g)) h += '<div class="card warn small"><b>Metas nutricionais ainda não definidas.</b> Você pode montar metas, treinos e cardápio com uma IA em <a href="#" data-act="aiSetup">Configurar com IA</a> ou digitar os valores em <a href="#" data-act="goSettings">Configurações</a> (de preferência com seu nutricionista ou médico). Até lá, o app mostra só os totais.</div>';
 
   // treino
   h += '<div class="card"><div class="row between"><h3>Treino de hoje</h3><span class="badge">' + ws.done + ' de ' + ws.planned + ' na semana' + (ws.extras ? ' · +' + ws.extras + ' extra' : '') + '</span></div>';
@@ -455,7 +465,7 @@ VIEWS.home = function () {
   h += '<div style="margin-top:10px">' + bar(ws.done, ws.planned || 1) + '</div></div>';
 
   // alimentação
-  h += '<div class="card"><div class="row between"><h3>Alimentação hoje</h3><a href="#" data-act="tab" data-tab="food" class="small">ver tudo</a></div>';
+  h += '<div class="card"><div class="row between"><h3>Alimentação hoje</h3><a href="#" data-act="tab" data-tab="food" class="small">' + (db.mealPlan.length ? 'ver cardápio' : 'ver tudo') + '</a></div>';
   h += macroLine('<b style="color:var(--p)">Proteína</b>', tot.p, g.protein, 'g', 'var(--p)', tot.missing.p);
   h += macroLine('Calorias', tot.kcal, g.kcal, 'kcal', null, tot.missing.kcal);
   h += '<div class="grid2 small"><div>Carboidratos: <b>' + r0(tot.c) + (tot.missing.c ? '*' : '') + (g.carbs ? '/' + r0(g.carbs) : '') + ' g</b></div><div>Gorduras: <b>' + r0(tot.f) + (tot.missing.f ? '*' : '') + (g.fat ? '/' + r0(g.fat) : '') + ' g</b></div></div>';
@@ -508,6 +518,7 @@ VIEWS.food = function () {
     (tot.nWater ? '' : '<div class="tiny muted" style="margin-top:6px">Sem registro de água neste dia (o que não quer dizer que você não bebeu).</div>') + '</div>';
 
   const meals = db.meals.filter(m => m.date === d).sort(byDate);
+  h += mealPlanCard(d);
   h += '<div class="fab-row"><button class="btn" data-act="newMeal">+ Adicionar refeição</button><button class="btn sec" data-act="copyMeal">Repetir refeição</button></div>';
   if (!meals.length) h += '<p class="muted">Nenhuma refeição registrada neste dia.</p>';
   for (const m of meals) {
@@ -1046,7 +1057,7 @@ PROG.forca = function () {
   let h = '<label>Exercício</label><select id="str-ex" data-change="strengthEx">' + names.map(n => '<option ' + (n === ui.strengthEx ? 'selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
   h += '<div class="card"><h3>Maior carga por sessão (kg)</h3>' + lineChart([{ pts, color: 'var(--pri)', dots: true }]) + '</div>';
   if (vol.some(v => v[1] > 0)) h += '<div class="card"><h3>Volume (kg × reps somados)</h3>' + lineChart([{ pts: vol, color: 'var(--p)', dots: true }]) + '</div>';
-  h += '<div class="card"><table><tr><th>Data</th><th>Séries feitas</th><th>Esforço</th></tr>' + rows.slice().reverse().map(r => '<tr><td>' + fmtDs(r.s.date) + '</td><td>' + r.e.sets.filter(x => x.done).map(x => (x.kg !== '' ? x.kg + '×' : '') + (x.reps || '?')).join(', ') + '</td><td>' + (r.e.rpe || '—') + (r.e.discomfort ? ' ⚠' : '') + '</td></tr>').join('') + '</table></div>';
+  h += '<div class="card"><table><tr><th>Data</th><th>Séries feitas</th><th>Esforço</th></tr>' + rows.slice().reverse().map(r => '<tr><td>' + fmtDs(r.s.date) + '</td><td>' + esc(setsTxt(r.e)) + '</td><td>' + (r.e.rpe || '—') + (r.e.discomfort ? ' ⚠' : '') + '</td></tr>').join('') + '</table></div>';
   h += '<p class="tiny muted">Quedas persistentes de desempenho pedem revisão de recuperação, alimentação, sono e planejamento. Queda de força, isoladamente, não confirma perda muscular.</p>';
   return h;
 };
@@ -1194,7 +1205,7 @@ VIEWS.health = function () {
   const med = db.medication, t = today();
   const logs = db.medLogs.slice().sort(byDate);
   const last = logs[logs.length - 1];
-  let h = '<div class="card"><div class="row between"><h3>Mounjaro (tirzepatida)</h3><button class="btn ghost sm" data-act="editMed">Editar</button></div>' +
+  let h = '<div class="card"><div class="row between"><h3>' + esc(med.name || 'Tratamento com medicação') + '</h3><button class="btn ghost sm" data-act="editMed">' + (medSet(med) ? 'Editar' : 'Preencher') + '</button></div>' +
     '<p class="tiny muted">O app só registra o que você informa. Ele não recomenda, não calcula e não altera doses. Siga sempre a prescrição do seu médico.</p>' +
     '<div class="kv"><span>Início do tratamento</span><b>' + (med.startDate ? fmtD(med.startDate) : 'não informado') + '</b></div>' +
     '<div class="kv"><span>Dia de aplicação</span><b>' + (med.weekday ? WD_LONG[med.weekday] : 'não definido') + '</b></div>' +
@@ -1218,6 +1229,7 @@ VIEWS.health = function () {
   h += '<button class="btn block" data-act="doctorReport">Relatório para o médico</button>';
   return h;
 };
+function medSet(m) { return !!(m.name || m.startDate || m.weekday || m.doseText); }
 function symptomSummary(s) {
   return SYMPTOMS.filter(([k]) => s.symptoms && s.symptoms[k] > 0).map(([k, l]) => l.split(' (')[0].split(' /')[0] + ' (' + INTENS[s.symptoms[k]].toLowerCase() + ')').join(', ');
 }
@@ -1261,6 +1273,7 @@ function medSheet() {
   openSheet({
     title: 'Dados do tratamento',
     render: () => '<p class="small muted">Todos os campos são opcionais. Registre apenas o que foi definido pelo seu médico.</p>' +
+      '<label>Medicamento</label><input id="md-name" maxlength="80" value="' + esc(m.name || '') + '" placeholder="nome do medicamento, se usar">' +
       '<label>Data de início</label><input type="date" id="md-start" value="' + esc(m.startDate) + '">' +
       '<label>Dia de aplicação</label><select id="md-wd"><option value="">não definido</option>' + [1, 2, 3, 4, 5, 6, 7].map(i => '<option value="' + esc(i) + '" ' + (String(m.weekday) === String(i) ? 'selected' : '') + '>' + WD_LONG[i] + '</option>').join('') + '</select>' +
       '<label>Dose prescrita (como está na receita)</label><input id="md-dose" value="' + esc(m.doseText) + '" placeholder="copie da prescrição médica">' +
@@ -1284,8 +1297,8 @@ function doctorReportText(days) {
   const inR = x => x.date >= from && x.date <= t;
   const m = db.medication, p = db.profile;
   let s = 'RELATÓRIO DE ACOMPANHAMENTO — ' + APP_NAME + '\nRegistros feitos pelo próprio paciente.\nPeríodo: ' + fmtD(from) + ' a ' + fmtD(t) + '\n\n';
-  s += 'Paciente: ' + (p.name || '—') + ' · ' + p.age + ' anos · ' + p.sex + ' · ' + p.heightCm + ' cm\n';
-  s += 'Tratamento: Mounjaro (tirzepatida)\n  Início: ' + (m.startDate ? fmtD(m.startDate) : 'não informado') + '\n  Dia de aplicação: ' + (m.weekday ? WD_LONG[m.weekday] : 'não definido') + '\n  Dose prescrita (informada): ' + (m.doseText || '—') + '\n';
+  s += 'Paciente: ' + [p.name || '—', p.age != null && p.age !== '' ? p.age + ' anos' : null, p.sex || null, p.heightCm != null ? fmtNum(p.heightCm) + ' cm' : null].filter(Boolean).join(' · ') + '\n';
+  s += 'Tratamento: ' + (m.name || 'não informado') + '\n  Início: ' + (m.startDate ? fmtD(m.startDate) : 'não informado') + '\n  Dia de aplicação: ' + (m.weekday ? WD_LONG[m.weekday] : 'não definido') + '\n  Dose prescrita (informada): ' + (m.doseText || '—') + '\n';
   const ml = db.medLogs.filter(inR).sort(byDate);
   s += '\nAPLICAÇÕES (' + ml.length + ')\n' + (ml.map(x => '  ' + fmtD(x.date) + ' ' + (x.time || '') + ' · ' + (x.doseText || 'dose não informada') + (x.site ? ' · ' + x.site : '') + (x.notes ? ' · ' + x.notes : '')).join('\n') || '  nenhuma registrada') + '\n';
   const sl = db.symptomLogs.filter(inR).sort(byDate);
@@ -1313,10 +1326,11 @@ function doctorReportText(days) {
 VIEWS.settings = function () {
   const p = db.profile, g = goalFor(today());
   const gv = k => g[k] == null ? '' : g[k];
-  let h = '<div class="card"><h3>Perfil</h3><div class="grid2">' +
+  let h = '<div class="card soft"><h3>Configurar com IA</h3><p class="small">Gere um prompt com seus dados atuais, converse com uma IA de chat e cole o código que ela devolver: perfil, metas, treinos, alimentos e cardápio são atualizados de uma vez.</p><button class="btn block" data-act="aiSetup">Gerar prompt ou colar código</button></div>';
+  h += '<div class="card"><h3>Perfil</h3><div class="grid2">' +
     '<div><label>Nome (opcional)</label><input id="pf-name" value="' + esc(p.name) + '"></div><div><label>Idade</label><input id="pf-age" inputmode="numeric" value="' + esc(p.age) + '"></div>' +
-    '<div><label>Sexo biológico</label><select id="pf-sex">' + ['Masculino', 'Feminino'].map(s => '<option ' + (p.sex === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></div><div><label>Altura (cm)</label><input id="pf-h" inputmode="decimal" value="' + esc(p.heightCm) + '"></div>' +
-    '<div><label>Peso inicial (kg)</label><input id="pf-sw" inputmode="decimal" value="' + esc(p.startWeight) + '"></div><div><label>Peso desejado (kg)</label><input id="pf-tw" inputmode="decimal" value="' + esc(p.targetWeight) + '"></div>' +
+    '<div><label>Sexo biológico</label><select id="pf-sex">' + [['', 'Não informado'], ['Masculino', 'Masculino'], ['Feminino', 'Feminino']].map(([v, l]) => '<option value="' + v + '" ' + ((p.sex || '') === v ? 'selected' : '') + '>' + l + '</option>').join('') + '</select></div><div><label>Altura (cm)</label><input id="pf-h" inputmode="decimal" value="' + esc(fmtNum(p.heightCm)) + '"></div>' +
+    '<div><label>Peso inicial (kg)</label><input id="pf-sw" inputmode="decimal" value="' + esc(fmtNum(p.startWeight)) + '"></div><div><label>Peso desejado (kg)</label><input id="pf-tw" inputmode="decimal" value="' + esc(fmtNum(p.targetWeight)) + '"></div>' +
     '<div><label>Início do programa</label><input type="date" id="pf-sd" value="' + esc(p.startDate) + '"></div></div><button class="btn block" style="margin-top:10px" data-act="saveProfile">Salvar perfil</button></div>';
 
   h += '<div class="card"><h3>Metas nutricionais diárias</h3><p class="small muted">Defina os valores com seu nutricionista ou médico. O app não sugere números. Deixe em branco o que não quiser acompanhar. Alterações valem a partir de hoje; o histórico anterior é mantido.</p><div class="grid2">' +
@@ -1343,13 +1357,13 @@ VIEWS.settings = function () {
 
   h += '<div class="card"><h3>Lembretes</h3><p class="small muted">Opcionais e desligados por padrão. Funcionam sem internet.</p><ul class="list">' + db.settings.reminders.map((r, i) => '<li class="row between"><span class="tap grow" data-act="editReminder" data-i="' + esc(i) + '"><b>' + esc(r.title) + '</b><div class="small muted">' + pad(r.hour) + ':' + pad(r.minute) + ' · ' + (r.days.length ? r.days.map(d => WD_SHORT[d]).join(', ') : 'todos os dias') + '</div></span><input type="checkbox" data-change="remToggle" data-i="' + esc(i) + '" ' + (r.enabled ? 'checked' : '') + '></li>').join('') + '</ul></div>';
 
-  h += '<div class="card"><h3>Backup e restauração</h3><p class="small muted">Seus dados ficam só neste celular. O app guarda uma cópia automática por dia (no celular, últimos 14 dias). Para não perder nada se trocar de celular ou desinstalar o app, exporte um backup de vez em quando e guarde em outro lugar (Google Drive, e-mail, computador).</p>' +
+  h += '<div class="card"><h3>Backup e restauração</h3><p class="small muted">' + (B ? 'Seus dados ficam só neste celular. O app guarda uma cópia automática por dia (no celular, últimos 14 dias). Para não perder nada se trocar de celular ou desinstalar o app, exporte um backup de vez em quando e guarde em outro lugar (Google Drive, e-mail, computador).' : 'Seus dados ficam só neste navegador, neste computador. Limpar os dados do navegador apaga tudo, então exporte um backup de vez em quando e guarde o arquivo em outro lugar. O navegador guarda as 3 últimas cópias diárias.') + '</p>' +
     '<label class="check"><input type="checkbox" id="bk-photos" checked> Incluir fotos das refeições</label>' +
     '<div class="btns"><button class="btn" data-act="exportBackup">Exportar backup</button><button class="btn sec" data-act="importBackup">Importar backup</button></div>' +
     '<button class="btn ghost block" style="margin-top:8px" data-act="localBackups">Cópias automáticas</button><button class="btn ghost block" style="margin-top:8px" data-act="checkPhotos">Verificar fotos guardadas</button></div>';
 
   h += '<div class="card"><h3>Aparência</h3><label>Tema</label><select data-change="theme">' + [['auto', 'Automático (igual ao celular)'], ['light', 'Claro'], ['dark', 'Escuro']].map(([v, l]) => '<option value="' + v + '" ' + ((db.settings.theme || 'auto') === v ? 'selected' : '') + '>' + l + '</option>').join('') + '</select><p class="tiny muted">O tamanho do texto segue a configuração de fonte do celular.</p></div>';
-  h += '<div class="card small muted"><b>Sobre</b><p>' + APP_NAME + ' 1.3.1 (antes Healthym / “Treino &amp; Saúde”) — app pessoal, gratuito, sem anúncios e sem login. Funciona sem internet e não envia dados para lugar nenhum. Não substitui acompanhamento médico ou nutricional. Nunca recomenda doses de medicamento.</p></div>';
+  h += '<div class="card small muted"><b>Sobre</b><p>' + APP_NAME + ' ' + APP_VERSION + ' (antes Healthym / “Treino &amp; Saúde”) — app pessoal, gratuito, sem anúncios e sem login. Funciona sem internet e não envia dados para lugar nenhum. Não substitui acompanhamento médico ou nutricional. Nunca recomenda doses de medicamento.</p></div>';
   return h;
 };
 
@@ -1395,36 +1409,146 @@ function recordSchedule() {
 }
 function syncReminders() { if (B && B.setReminders) B.setReminders(JSON.stringify(db.settings.reminders)); }
 
-function onboarding() {
-  openSheet({
-    title: 'Bem-vindo!',
-    render: () => '<p>Este é o seu app pessoal de treino e saúde. Tudo fica guardado <b>só no seu celular</b>, funciona sem internet e não tem anúncios.</p>' +
-      '<div class="card soft small">Já deixei preenchido com o seu ponto de partida: 22 anos, 173 cm, 115 kg, meta de 90 kg, Full Body A/B/C às segundas, quartas e sextas, início em 09/11/2026 e primeira avaliação em 07/12/2026. Você pode mudar tudo em Configurações.</div>' +
-      '<label class="check"><input type="checkbox" id="ob-hist" checked> Importar as refeições de 09/11/2026 descritas no planejamento (quantidades do almoço ficam em branco)</label>' +
-      '<label class="check"><input type="checkbox" id="ob-w" checked> Registrar 115 kg como peso de 09/11/2026</label>' +
-      '<p class="small muted">As metas nutricionais começam em branco: defina-as com seu nutricionista ou médico em Configurações.</p>' +
-      '<p class="small muted">Este app não substitui acompanhamento médico ou nutricional e nunca recomenda doses de medicamento.</p>' +
-      '<button class="btn block" data-act="obDone">Começar</button>'
-  });
-}
-function seedHistory() {
-  const F = n => db.foods.find(f => f.name === n);
-  const it = (name, amount, unitName, estimated) => {
-    const f = F(name); draft = { _food: f };
-    const q = qtyCompute(amount, unitName); const c = itemCalc(f, q.grams);
-    return { foodId: f.id, name: f.name, amount: q.amount, unitName: q.unitName, grams: q.grams, amountLabel: q.label, estimated: !!estimated, ...c };
+// ================================================================ CONFIGURAÇÃO POR IA (copiar e colar)
+// O app não chama nenhuma IA. Ele monta o prompt (setup.js), a pessoa conversa com a IA que preferir
+// e cola aqui o código JSON gerado. Tudo é conferido e mostrado num resumo antes de ser aplicado.
+let setupDraft = '';                       // código colado: sobrevive a um redesenho da tela
+const aiOpts = { request: '', health: true };
+function copyText(text, okMsg) {
+  const done = ok => toast(ok ? okMsg : 'Não foi possível copiar sozinho. Abra “Ver o texto”, selecione tudo e copie.');
+  if (B && B.copyText) { let ok = false; try { ok = B.copyText(text) === true; } catch (e) { } return done(ok); }
+  const legacy = () => {
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) { } ta.remove(); return ok;
   };
-  const none = name => { const f = F(name); return { foodId: f.id, name: f.name, amount: null, unitName: f.base, grams: null, amountLabel: '', estimated: false, kcal: null, p: null, c: null, f: null }; };
-  const d = '2026-11-09';
-  db.meals.push({ id: uid(), date: d, time: '07:00', type: 'Café da manhã', photoIds: [],
-    notes: 'Do planejamento: ~300 ml de café com leite (mais leite que café) e 2½ colheres de sopa de açúcar. A divisão leite/café, o tipo de leite e o peso das colheres são estimativas — ajuste se souber.',
-    items: [it('Pão francês', 1, 'unidade (~50 g)'), it('Ovo frito', 1, 'unidade (~50 g)'), it('Leite de vaca integral', 180, 'ml', true), it('Café coado (sem açúcar)', 120, 'ml', true), it('Açúcar refinado', 2.5, 'colher de sopa (~12 g)', true)] });
-  db.meals.push({ id: uid(), date: d, time: '09:30', type: 'Lanche da manhã', photoIds: [], notes: 'Menos de meia xícara de café com duas colheres pequenas e rasas de açúcar (estimativa).',
-    items: [it('Café coado (sem açúcar)', 70, 'ml', true), it('Açúcar refinado', 2, 'colher de chá (~4 g)', true)] });
-  db.meals.push({ id: uid(), date: d, time: '12:30', type: 'Almoço', photoIds: [], notes: 'Quantidades não confirmadas. Toque em cada item para informar, se quiser.',
-    items: [none('Arroz branco cozido'), none('Carne de porco (lombo) assada'), none('Feijão tropeiro'), none('Batata palha / chips (industrializada)'), none('Cenoura cozida'), none('Batata inglesa cozida')] });
-  draft = null;
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(legacy()));
+  else done(legacy());
 }
+function pasteSetup() {
+  const put = t => {
+    const el = $('#su-json');
+    if (!t || !el) return toast('Não consegui ler a área de transferência. Toque e segure no campo e escolha “Colar”.');
+    el.value = t; setupDraft = t; clearErrs(); toast('Código colado. Toque em “Conferir e aplicar”.');
+  };
+  if (B && B.pasteText) { let t = ''; try { t = B.pasteText(); } catch (e) { } return put(t); }
+  if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(put, () => put(''));
+  else put('');
+}
+function setupBoxHtml() {
+  return '<label for="su-json">Código gerado pela IA</label><textarea id="su-json" class="code" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Cole aqui o código que a IA gerou (começa com { e termina com })">' + esc(setupDraft) + '</textarea>' +
+    '<div class="btns"><button class="btn ghost" data-act="setupPaste">Colar</button><button class="btn" data-act="setupCheck">Conferir e aplicar</button></div>';
+}
+const promptBoxHtml = id => '<details class="prompt-view"><summary class="small">Ver o texto do prompt</summary><textarea id="' + id + '" class="code" readonly aria-label="Texto do prompt"></textarea></details>';
+function currentPrompt(mode) {
+  if ($('#ai-req')) { aiOpts.request = val('ai-req'); aiOpts.health = checked('ai-health'); }
+  return HS.buildPrompt(db, { mode, today: today(), request: aiOpts.request, health: aiOpts.health });
+}
+const LOGO = '<svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M2 10h2V8h2v8H4v-2H2zm4-4h3v12H6zm3 5h6v2H9zm6-5h3v12h-3zm3 2h2v2h2v4h-2v2h-2z"/></svg>';
+
+VIEWS.welcome = function () {
+  return '<div class="hero"><div class="hero-mark" aria-hidden="true">' + LOGO + '</div><h2>Bem-vindo ao ' + APP_NAME + '</h2><p>Treino, alimentação, peso e saúde em um lugar só. Funciona sem internet, e seus dados ficam apenas neste aparelho.</p></div>' +
+    '<div class="card"><h3>Configure tudo em 3 passos, com a ajuda de uma IA</h3>' +
+    '<p class="small muted">O app não tem IA embutida. Você usa a IA de chat que preferir (ChatGPT, Claude, Gemini, Copilot...). Ela faz as perguntas, monta suas metas, seus treinos e seu cardápio, e devolve um código que preenche o app inteiro de uma vez.</p>' +
+    '<ol class="steps">' +
+    '<li><b>Copie o prompt</b><p class="small muted">É um texto pronto que explica à IA o que perguntar e como responder.</p><button class="btn block" data-act="promptCopy" data-mode="first">Copiar prompt</button>' + promptBoxHtml('wl-prompt') + '</li>' +
+    '<li><b>Cole na IA e responda às perguntas</b><p class="small muted">Ela pergunta sobre seu objetivo, sua rotina, seus treinos e sua alimentação. Leva de 5 a 10 minutos. No final, ela mostra um bloco de código (JSON) com todos os alimentos já com calorias, proteína, carboidratos e gorduras. Copie esse bloco inteiro.</p></li>' +
+    '<li><b>Cole o código aqui</b><p class="small muted">O app confere tudo e mostra um resumo antes de aplicar.</p>' + setupBoxHtml() + '</li></ol>' +
+    '<p class="tiny muted">Privacidade: o app não envia nada para a internet. O que você escrever na IA fica com o serviço que você escolher, então conte só o que se sentir à vontade para compartilhar.</p></div>' +
+    '<details class="card" id="wl-manual"><summary><b>Prefiro preencher à mão</b></summary>' +
+    '<p class="small muted">O app começa com três treinos de exemplo (Full Body A, B e C, às segundas, quartas e sextas). Depois você ajusta treinos, metas e lembretes em Configurações, ou usa a IA quando quiser.</p><div class="grid2">' +
+    '<div><label>Nome (opcional)</label><input id="ob-name" maxlength="60" autocomplete="off"></div><div><label>Idade</label><input id="ob-age" inputmode="numeric"></div>' +
+    '<div><label>Sexo biológico</label><select id="ob-sex"><option value="">Não informado</option><option>Masculino</option><option>Feminino</option></select></div><div><label>Altura (cm)</label><input id="ob-h" inputmode="decimal"></div>' +
+    '<div><label>Peso atual (kg)</label><input id="ob-w" inputmode="decimal" placeholder="ex.: 82,5"></div><div><label>Peso desejado (kg)</label><input id="ob-tw" inputmode="decimal" placeholder="ex.: 75"></div></div>' +
+    '<button class="btn block" style="margin-top:12px" data-act="obDone">Começar</button></details>' +
+    '<button class="btn ghost block" data-act="importBackup">Já uso o app: restaurar um backup</button>' +
+    '<p class="tiny muted" style="margin-top:14px">Este app não substitui acompanhamento médico ou nutricional e nunca recomenda doses de medicamento. Metas e valores sugeridos por uma IA são estimativas: confirme com um profissional, principalmente se você tem alguma condição de saúde.</p>';
+};
+VIEWS.welcomeMounted = function () { const t = $('#wl-prompt'); if (t) t.value = HS.buildPrompt(db, { mode: 'first', today: today() }); };
+
+function aiSheet() {
+  if (store.recovery || needsSetup()) return;
+  openSheet({ title: 'Configurar com IA',
+    render: () => '<p class="small">Gere um prompt que já leva seus dados atuais (perfil, metas, treinos, cardápio e um resumo do seu progresso). Cole numa IA de chat, converse sobre o que quer mudar e traga de volta o código que ela gerar. Os alimentos voltam com calorias, proteína, carboidratos e gorduras.</p>' +
+      '<label for="ai-req">O que você quer mudar? (opcional)</label><textarea id="ai-req" maxlength="1500" placeholder="Ex.: quero treinar 4 dias por semana, trocar o jantar e aumentar a proteína">' + esc(aiOpts.request) + '</textarea>' +
+      '<label class="check"><input type="checkbox" id="ai-health" ' + (aiOpts.health ? 'checked' : '') + '> Incluir dados de saúde no prompt (tratamento e sintomas)</label>' +
+      '<button class="btn block" data-act="promptCopy" data-mode="update">Copiar prompt com meus dados</button>' + promptBoxHtml('ai-prompt') +
+      '<p class="tiny muted">O texto só sai do app quando você o cola em outro lugar. Abra “Ver o texto do prompt” para conferir exatamente o que será compartilhado.</p>' +
+      '<h3 class="sheet-sub">Depois, cole aqui o código da IA</h3>' + setupBoxHtml() +
+      '<details class="more"><summary class="small">Outras opções</summary><div class="btns"><button class="btn ghost sm" data-act="promptCopy" data-mode="first">Copiar prompt para começar do zero</button><button class="btn ghost sm" data-act="setupExport">Copiar minha configuração atual</button></div>' +
+      '<p class="tiny muted">A configuração em código serve para guardar ou levar seus treinos, metas e cardápio para outro aparelho. Ela não inclui seus registros; para isso, use o backup em Configurações.</p></details>',
+    mounted: el => {
+      const up = () => { $('#ai-prompt', el).value = currentPrompt('update'); };
+      $('#ai-req', el).addEventListener('input', up); $('#ai-health', el).addEventListener('change', up); up();
+    } });
+}
+// Resumo do que o código vai mudar (calculado numa cópia dos dados; nada é gravado aqui).
+function setupSummaryHtml(v, first) {
+  const s = v.setup, sim = HS.applySetup(db, s, { first, today: today() }).db;
+  const kv = (l, x) => '<div class="kv"><span>' + esc(l) + '</span><b>' + esc(x) + '</b></div>';
+  let h = '';
+  if (s.profile) {
+    const p = s.profile, rows = [];
+    if (p.name !== undefined) rows.push(kv('Nome', p.name));
+    if (p.age !== undefined) rows.push(kv('Idade', p.age + ' anos'));
+    if (p.sex !== undefined) rows.push(kv('Sexo', p.sex));
+    if (p.heightCm !== undefined) rows.push(kv('Altura', r1(p.heightCm) + ' cm'));
+    if (p.startWeight !== undefined || (first && p.currentWeight !== undefined)) rows.push(kv('Peso inicial', r1(sim.profile.startWeight) + ' kg'));
+    if (p.currentWeight !== undefined) rows.push(kv('Peso atual', r1(p.currentWeight) + ' kg'));
+    if (p.targetWeight !== undefined) rows.push(kv('Peso desejado', r1(p.targetWeight) + ' kg'));
+    if (p.startDate !== undefined || first) rows.push(kv('Início do programa', fmtD(sim.profile.startDate)));
+    h += '<div class="card"><h3>Perfil</h3>' + rows.join('') + '</div>';
+  }
+  if (s.goals) {
+    const g = sim.nutritionGoals[sim.nutritionGoals.length - 1], x = (n, u) => n == null ? 'sem meta' : r0(n) + ' ' + u;
+    h += '<div class="card"><h3>Metas diárias</h3>' + kv('Calorias', x(g.kcal, 'kcal')) + kv('Proteína', x(g.protein, 'g')) + kv('Carboidratos', x(g.carbs, 'g')) + kv('Gorduras', x(g.fat, 'g')) + kv('Água', x(g.water, 'ml')) + '<p class="tiny muted">Valem a partir de hoje. São estimativas: confirme com seu médico ou nutricionista.</p></div>';
+  }
+  if (s.plans || s.schedule) {
+    h += '<div class="card"><h3>Treinos</h3><ul class="list">' + sim.plans.map(p => {
+      const days = Object.keys(sim.schedule).filter(k => sim.schedule[k] === p.id).map(k => WD_SHORT[k]).join(', ');
+      return '<li><div class="row between"><b>' + esc(p.name) + '</b><span class="small muted">' + (days || 'sem dia fixo') + '</span></div><div class="small muted">' + p.exercises.map(e => esc(e.name) + ' ' + esc(e.sets) + '×' + esc(e.reps)).join(' · ') + '</div></li>';
+    }).join('') + '</ul>' + (s.plans && !first ? '<p class="tiny muted">Esta lista substitui os planos atuais. O histórico de sessões já registradas não muda.</p>' : '') + '</div>';
+  }
+  if (s.mealPlan) {
+    const t = HS.mealPlanTotals(sim.mealPlan), g = sim.nutritionGoals.filter(x => x.from <= today()).sort((a, b) => a.from.localeCompare(b.from)).pop() || {};
+    h += '<div class="card"><h3>Cardápio</h3>' + (sim.mealPlan.length ? '<ul class="list">' + sim.mealPlan.map(m => { const mt = H.totals(m.items); return '<li><div class="row between"><b>' + esc(m.label) + (m.time ? ' <span class="small muted">' + esc(m.time) + '</span>' : '') + '</b><span class="small"><b>' + r0(mt.kcal) + ' kcal</b> · <span style="color:var(--p)">P ' + r1(mt.p) + ' g</span></span></div><div class="small muted">' + m.items.map(i => esc(i.name) + (i.amountLabel ? ' (' + esc(i.amountLabel) + ')' : '')).join(', ') + '</div></li>'; }).join('') + '</ul>' +
+      '<div class="plan-total small"><b>Total do dia:</b> ' + r0(t.kcal) + (g.kcal ? ' de ' + r0(g.kcal) : '') + ' kcal · <b style="color:var(--p)">proteína ' + r0(t.p) + (g.protein ? ' de ' + r0(g.protein) : '') + ' g</b> · carb. ' + r0(t.c) + ' g · gord. ' + r0(t.f) + ' g' + (t.partial ? ' <span class="muted">(parcial: há itens sem valor)</span>' : '') + '</div>' : '<p class="small muted">O cardápio atual será removido.</p>') + '</div>';
+  }
+  if (s.foods) h += '<div class="card"><h3>Alimentos</h3><p class="small">' + s.foods.length + ' alimento(s) com calorias, proteína, carboidratos e gorduras por 100 g ou ml entram na sua lista' + (s.foods.some(f => db.foods.some(x => HS.norm(x.name) === HS.norm(f.name))) ? ' (os que já existem com o mesmo nome são atualizados)' : '') + '.</p><p class="small muted">' + s.foods.slice(0, 12).map(f => esc(f.name)).join(', ') + (s.foods.length > 12 ? ' e mais ' + (s.foods.length - 12) : '') + '</p></div>';
+  const other = [];
+  if (s.rest) { const st = sim.settings; other.push(kv('Descanso entre séries', st.restEnabled === false ? 'desligado' : st.restMode === 'prog' ? 'progressivo, a partir de ' + fmtSecs(st.restBase) : fmtSecs(st.restSeconds || 90))); }
+  if (s.reminders) s.reminders.forEach(r => { const c = sim.settings.reminders.find(x => x.id === r.id); if (c) other.push(kv('Lembrete: ' + c.title, c.enabled ? pad(c.hour) + ':' + pad(c.minute) + ' · ' + (c.days.length ? c.days.map(x => WD_SHORT[x]).join(', ') : 'todos os dias') : 'desligado')); });
+  if (s.medication) { const m = sim.medication; other.push(kv('Tratamento', [m.name, m.doseText, m.weekday ? WD_LONG[Number(m.weekday)] : ''].filter(Boolean).join(' · ') || '—')); }
+  if (s.theme) other.push(kv('Tema', { auto: 'automático', light: 'claro', dark: 'escuro' }[s.theme]));
+  if (other.length) h += '<div class="card"><h3>Preferências</h3>' + other.join('') + (s.medication ? '<p class="tiny muted">O app só registra o que você informou; ele não recomenda nem calcula doses.</p>' : '') + '</div>';
+  if (v.warnings.length) h += '<details class="card warn" open><summary class="small"><b>' + v.warnings.length + ' aviso(s): partes do código foram ignoradas</b></summary><ul class="small">' + v.warnings.slice(0, 20).map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></details>';
+  return h;
+}
+function setupConfirm(v) {
+  const first = needsSetup();
+  const html = '<p class="small">Confira o que a IA montou. ' + (first ? 'Dá para mudar tudo depois em Configurações.' : 'O que não aparece aqui continua como está. Antes de aplicar, o app guarda uma cópia dos dados atuais em “Cópias automáticas”.') + '</p>' + setupSummaryHtml(v, first);
+  openSheet({ title: 'Conferir configuração', v, render: () => html + '<div class="btns"><button class="btn ghost" data-act="closeSheet">Voltar</button><button class="btn" data-act="setupApply">Aplicar</button></div>' });
+}
+// ---- cardápio sugerido (vem da configuração por IA): cada item com kcal, proteína, carboidratos e gorduras
+function mealPlanCard(d) {
+  const mp = db.mealPlan; if (!mp.length) return '';
+  const g = goalFor(d), tot = HS.mealPlanTotals(mp);
+  const nv = v => v == null ? '?' : r1(v);
+  let h = '<details class="card plan" data-mealplan' + (db.meals.some(m => m.date === d) ? '' : ' open') + '><summary><b>Cardápio sugerido</b> <span class="small muted">' + r0(tot.kcal) + ' kcal · ' + r0(tot.p) + ' g de proteína</span></summary>' +
+    '<p class="tiny muted">Montado na configuração por IA; os valores são estimativas. Toque em “Registrar” para lançar a refeição neste dia (dá para ajustar antes de salvar).</p>';
+  mp.forEach(m => {
+    const t = H.totals(m.items), logged = db.meals.some(x => x.date === d && x.planId === m.id);
+    h += '<div class="plan-meal"><div class="row between"><div class="grow"><b>' + esc(m.label) + '</b>' + (m.time ? ' <span class="small muted">' + esc(m.time) + '</span>' : '') +
+      '<div class="small"><b>' + r0(t.kcal) + ' kcal</b> · <span style="color:var(--p)">P ' + r1(t.p) + ' g</span> · C ' + r1(t.c) + ' g · G ' + r1(t.f) + ' g' + (t.partial ? '*' : '') + '</div></div>' +
+      '<button class="btn ' + (logged ? 'ghost' : 'sec') + ' sm" data-act="planMealLog" data-id="' + esc(m.id) + '">' + (logged ? '✓ Registrada' : 'Registrar') + '</button></div>' +
+      '<ul class="plan-items">' + m.items.map(i => '<li><div>' + esc(i.name) + (i.amountLabel ? ' <span class="muted">· ' + esc(i.amountLabel) + '</span>' : '') + '</div><div class="tiny muted">' + (i.kcal != null ? r0(i.kcal) : '?') + ' kcal · P ' + nv(i.p) + ' g · C ' + nv(i.c) + ' g · G ' + nv(i.f) + ' g</div></li>').join('') + '</ul>' +
+      (m.notes ? '<div class="tiny muted">' + esc(m.notes) + '</div>' : '') + '</div>';
+  });
+  h += '<div class="plan-total small"><b>Total do cardápio:</b> ' + r0(tot.kcal) + (g.kcal ? ' de ' + r0(g.kcal) : '') + ' kcal · <b style="color:var(--p)">proteína ' + r0(tot.p) + (g.protein ? ' de ' + r0(g.protein) : '') + ' g</b> · carb. ' + r0(tot.c) + (g.carbs ? ' de ' + r0(g.carbs) : '') + ' g · gord. ' + r0(tot.f) + (g.fat ? ' de ' + r0(g.fat) : '') + ' g' + (tot.partial ? '<div class="tiny muted">* parcial: há itens sem esse valor</div>' : '') + '</div>' +
+    '<div class="btns"><button class="btn ghost sm" data-act="aiSetup">Atualizar com IA</button><button class="btn ghost sm" data-act="planClear">Remover cardápio</button></div></details>';
+  return h;
+}
+
 
 // ================================================================ ações (cliques)
 const A = {};
@@ -1548,7 +1672,7 @@ A.saveMeal = () => {
   const d = draft;
   if (!d.items.length && !d.photoIds.length && !d.notes) return toast('Adicione pelo menos um alimento, foto ou observação');
   const old = d.id ? db.meals.find(x => x.id === d.id) : null;
-  const m = Object.assign({}, old || {}, { id: d.id || uid(), date: d.date, time: d.time, type: d.type, items: d.items, notes: d.notes, photoIds: d.photoIds.slice(), favorite: !!d.favorite });
+  const m = Object.assign({}, old || {}, { id: d.id || uid(), date: d.date, time: d.time, type: d.type, items: d.items, notes: d.notes, photoIds: d.photoIds.slice(), favorite: !!d.favorite }, d.planId ? { planId: d.planId } : {});
   if (!commit(() => { const i = db.meals.findIndex(x => x.id === m.id); if (i >= 0) db.meals[i] = m; else db.meals.push(m); })) {
     return toast('Não foi possível salvar. A refeição continua aberta: tente de novo.');
   }
@@ -1673,7 +1797,7 @@ A.pastSession = el => { checkin = { planId: el.dataset.plan, date: el.dataset.da
 A.viewSession = el => {
   const s = db.sessions.find(x => x.id === el.dataset.id);
   openSheet({ title: s.planName + ' · ' + fmtDs(s.date), stSel: s.status, render: function () {
-    return (s.exercises.length ? '<table><tr><th>Exercício</th><th>Séries</th><th>Esf.</th></tr>' + s.exercises.map(e => '<tr><td>' + esc(e.name) + (e.discomfort ? ' ⚠' : '') + (e.notes ? '<div class="tiny muted">' + esc(e.notes) + '</div>' : '') + (e.skip ? '<div class="tiny muted">↷ Pulado — ' + esc(skipTxt(e)) + '</div>' : '') + '</td><td>' + (setsTxt(e) || '—') + '</td><td>' + (e.rpe || '—') + '</td></tr>').join('') + '</table>' : '<p class="muted small">Sem exercícios registrados.</p>') +
+    return (s.exercises.length ? '<table><tr><th>Exercício</th><th>Séries</th><th>Esf.</th></tr>' + s.exercises.map(e => '<tr><td>' + esc(e.name) + (e.discomfort ? ' ⚠' : '') + (e.notes ? '<div class="tiny muted">' + esc(e.notes) + '</div>' : '') + (e.skip ? '<div class="tiny muted">↷ Pulado — ' + esc(skipTxt(e)) + '</div>' : '') + '</td><td>' + (esc(setsTxt(e)) || '—') + '</td><td>' + (e.rpe || '—') + '</td></tr>').join('') + '</table>' : '<p class="muted small">Sem exercícios registrados.</p>') +
       (s.exercises.length ? '<div class="grid2"><div><label for="vs-start">Início</label><input type="time" id="vs-start" value="' + (s.timesUnknown ? '' : hhmm(s.startedAt || '')) + '"></div><div><label for="vs-end">Fim</label><input type="time" id="vs-end" value="' + (s.timesUnknown ? '' : hhmm(s.endedAt || '')) + '"></div></div>' + (sessionMinutes(s) ? '<p class="small muted">Duração: ' + fmtMin(sessionMinutes(s)) + '</p>' : '') : '') +
       (s.notes ? '<p class="small">' + esc(s.notes) + '</p>' : '') + '<label>Status</label>' + chipsHtml('finSt', Object.keys(STATUS).filter(k => k !== 'em_andamento').map(k => [k, STATUS[k]]), this.stSel) +
       '<div class="btns"><button class="btn danger" data-act="delSession" data-id="' + esc(s.id) + '">Excluir</button>' + (s.exercises.length ? '<button class="btn sec" data-act="reopenSession" data-id="' + esc(s.id) + '">Editar séries</button>' : '') + '<button class="btn" data-act="saveSessionStatus" data-id="' + esc(s.id) + '">Salvar</button></div>';
@@ -1745,11 +1869,15 @@ A.rvShare = () => share('Avaliação de 4 semanas', reviewText(sheet.R, sheet.st
 function share(title, text) {
   if (B) return B.shareText(title, text);
   if (navigator.share) return navigator.share({ title, text }).catch(() => { });
-  try { navigator.clipboard.writeText(text); toast('Copiado'); } catch (e) { }
+  copyText(text, 'Copiado');
 }
 // saúde
 A.editMed = () => medSheet();
-A.saveMed = () => { Object.assign(db.medication, { startDate: val('md-start'), weekday: val('md-wd'), doseText: val('md-dose'), notes: val('md-notes') }); persist(); closeSheet(); render(); };
+A.saveMed = () => {
+  const sd = val('md-start');
+  if (sd && !H.isDate(sd)) { clearErrs(); return fieldErr('md-start', 'Data inválida'); }
+  Object.assign(db.medication, { name: val('md-name'), startDate: sd, weekday: val('md-wd'), doseText: val('md-dose'), notes: val('md-notes') }); persist(); closeSheet(); render();
+};
 A.addMedLog = () => medLogSheet(null);
 A.editMedLog = el => medLogSheet(db.medLogs.find(x => x.id === el.dataset.id));
 A.saveMedLog = el => {
@@ -1819,7 +1947,12 @@ A.savePlan = () => {
   });
   if (!ok) return;
   p.exercises = p.exercises.filter(e => e.name);
-  if (!p.id) { const used = db.plans.map(x => x.id); let id = 'D'; for (const c of 'DEFGHIJKLMNOPQRSTUVWXYZ') if (!used.includes(c)) { id = c; break; } p.id = id; db.plans.push(p); }
+  if (!p.id) {
+    // letras ainda não usadas em planos, na agenda ou no histórico (para uma sessão antiga não "virar" o plano novo)
+    const used = new Set(db.plans.map(x => x.id).concat(db.sessions.map(x => x.planId), Object.values(db.schedule)));
+    let id = null; for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if (!used.has(c)) { id = c; break; }
+    p.id = id || 'p' + uid(); db.plans.push(p);
+  }
   else db.plans[db.plans.findIndex(x => x.id === p.id)] = p;
   persist(); closeSheet(); render(); toast('Plano salvo');
 };
@@ -1925,6 +2058,55 @@ A.restoreLocal = el => {
   try { const o = JSON.parse(t); if (o && o.app !== 'TreinoSaude') text = JSON.stringify({ app: 'TreinoSaude', format: 1, data: o }); } catch (e) { /* inválida: a validação explica */ }
   startRestore(text);
 };
+// configuração por IA
+A.aiSetup = () => aiSheet();
+A.promptCopy = el => copyText(currentPrompt(el.dataset.mode), 'Prompt copiado. Agora cole na IA de sua preferência.');
+A.setupPaste = () => pasteSetup();
+A.setupExport = () => copyText(JSON.stringify(HS.exportSetup(db, { today: today(), foods: true }), null, 1), 'Configuração copiada');
+A.setupCheck = () => {
+  const el = $('#su-json'); if (el) setupDraft = el.value;
+  clearErrs();
+  const x = HS.extractJson(setupDraft);
+  if (!x.ok) return fieldErr('su-json', x.error);
+  const v = HS.validateSetup(x.obj, db);
+  if (!v.ok) return fieldErr('su-json', v.errors[0]);
+  const p = v.setup.profile || {};
+  if (needsSetup() && !((p.currentWeight != null || p.startWeight != null) && p.targetWeight != null)) return fieldErr('su-json', 'Para a primeira configuração, o código precisa trazer o “perfil” com peso atual e peso desejado. Peça à IA para incluir essa parte, ou use “Prefiro preencher à mão”.');
+  setupConfirm(v);
+};
+A.setupApply = () => {
+  const v = sheet.v, first = needsSetup();
+  if (!first && !writeSafetyBackup('pre-setup', JSON.stringify(db))) return toast('Não foi possível guardar uma cópia de segurança. Nada foi alterado.');
+  const r = HS.applySetup(db, v.setup, { first, today: today(), uid });
+  const chk = H.validateDb(r.db);
+  if (chk.errors.length) return toast('Esta configuração deixaria os dados inválidos e não foi aplicada (' + chk.errors[0] + ').');
+  const prev = db; db = ensureShape(r.db);
+  if (!persist()) { db = prev; return toast('Não foi possível salvar. Nada foi alterado.'); }
+  setupDraft = ''; aiOpts.request = ''; syncReminders(); ui.tab = 'home'; ui.weekOf = weekStart(today()); ui.foodDate = today();
+  closeSheet(); render(); window.scrollTo(0, 0);
+  toast(first ? 'Tudo pronto! Seu app está configurado.' : 'Configuração aplicada');
+};
+A.obDone = () => {
+  const r = form(() => ({ age: field('ob-age', 'age'), heightCm: field('ob-h', 'height'), w: field('ob-w', 'weight', { required: true }), tw: field('ob-tw', 'weight', { required: true }) }));
+  if (!r) return;
+  const t = today();
+  const ok = commit(() => {
+    Object.assign(db.profile, { name: val('ob-name'), sex: val('ob-sex'), age: r.age, heightCm: r.heightCm, startWeight: r.w, targetWeight: r.tw, startDate: t });
+    db.weights.push({ id: uid(), date: t, kg: r.w, notes: 'Peso de referência inicial' });
+    db.scheduleHistory = [{ from: t, schedule: Object.assign({}, db.schedule) }];
+    db.settings.onboarded = true;
+  });
+  if (!ok) return toast('Não foi possível salvar. Tente de novo.');
+  ui.tab = 'home'; render(); window.scrollTo(0, 0); toast('Tudo pronto! Ajuste treinos e metas em Configurações.');
+};
+A.planMealLog = el => {
+  const pm = db.mealPlan.find(x => x.id === el.dataset.id); if (!pm) return;
+  const known = MEAL_TYPES.find(t => HS.norm(t) === HS.norm(pm.label));
+  mealEditor(null);
+  Object.assign(draft, { type: known || 'Outro', time: ui.foodDate === today() ? nowTime() : (pm.time || '12:00'), items: JSON.parse(JSON.stringify(pm.items)), notes: known ? '' : pm.label, planId: pm.id });
+  refreshSheet(true);
+};
+A.planClear = () => confirmBox('Remover o cardápio sugerido? As refeições já registradas não mudam.', 'Remover', () => { if (commit(() => { db.mealPlan = []; })) toast('Cardápio removido'); render(); }, true);
 // modo de recuperação
 A.exportRaw = () => {
   const raw = store.recovery && store.recovery.raw; if (!raw) return;
@@ -1937,7 +2119,7 @@ A.recoveryFresh = () => confirmBox('Começar do zero? Uma base nova será criada
   const prev = store.recovery;
   db = freshDb(); store.recovery = null;
   if (!persist()) { store.recovery = prev; render(); return restoreFailed({ errors: ['Não foi possível gravar a base nova.'] }); }
-  render(); onboarding();
+  ui.tab = 'home'; render(); window.scrollTo(0, 0);
 }, true);
 // fotos sem refeição (nunca apagadas automaticamente)
 A.checkPhotos = () => {
@@ -1950,11 +2132,7 @@ A.checkPhotos = () => {
     (orphans.length ? '<p class="small muted">Fotos sem refeição podem sobrar de versões anteriores. Elas só são apagadas se você confirmar.</p><button class="btn danger block" data-act="delOrphans">Apagar ' + orphans.length + ' foto(s) sem refeição</button>' : '<p class="small muted">Nenhuma foto sobrando.</p>'), orphans });
 };
 A.delOrphans = () => { const list = sheet.orphans.slice(); confirmBox('Apagar ' + list.length + ' foto(s) que não estão ligadas a nenhuma refeição? Isso não pode ser desfeito.', 'Apagar', () => { list.forEach(delPhoto); toast(list.length + ' foto(s) apagadas'); }, true); };
-A.obDone = () => {
-  if (checked('ob-hist')) seedHistory();
-  if (checked('ob-w')) db.weights.push({ id: uid(), date: '2026-11-09', kg: 115, notes: 'Peso de referência inicial' });
-  db.settings.onboarded = true; persist(); closeSheet(); render();
-};
+
 
 // ---------------------------------------------------------------- eventos
 document.addEventListener('click', e => {
@@ -1968,6 +2146,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && sheet) closeSheet();
 });
 $('#btn-settings').addEventListener('click', () => go('settings'));
+$('#btn-ai').addEventListener('click', () => aiSheet());
 $('#save-retry').addEventListener('click', () => { if (persist()) toast('Dados salvos'); });
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.change;
@@ -1986,6 +2165,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.id === 'su-json') { setupDraft = el.value; return; }
   if (ui.tab !== 'session') return;  // (o Treino diário com sessão em andamento abre a própria sessão)
   const s = db.sessions.find(x => x.id === ui.sessionId); if (!s) return;
   if (el.dataset.set) { const [ei, si, k] = el.dataset.set.split(':'); s.exercises[ei].sets[si][k] = el.value.trim(); markSetInput(el); persistSoon(); }
@@ -1997,7 +2177,6 @@ document.addEventListener('input', e => {
 loadDb();
 render();
 if (!store.recovery) {
-  if (!db.settings.onboarded) onboarding();
   syncReminders();
   if (B && B.takeOpenSession && B.takeOpenSession()) window.openRunningSession();
 }

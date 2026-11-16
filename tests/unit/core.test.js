@@ -243,7 +243,7 @@ test('migração: não destrutiva e idempotente', () => {
   const snap = JSON.stringify(v1);
   const m = H.migrate(v1);
   assert.equal(JSON.stringify(v1), snap, 'original intacto');
-  assert.equal(m.version, 2); assert.equal(m.settings.theme, 'auto');
+  assert.equal(m.version, 3); assert.equal(m.settings.theme, 'auto'); assert.deepEqual(m.mealPlan, []);
   assert.deepEqual(m.scheduleHistory, [{ from: '2026-11-09', schedule: v1.schedule }]);
   assert.deepEqual(m.meals, v1.meals);
   assert.deepEqual(H.migrate(m), m);
@@ -267,7 +267,7 @@ test('backup: válido devolve resumo, migra e filtra fotos inválidas', () => {
   assert.equal(r.summary.firstDate, '2026-11-09'); assert.equal(r.summary.lastDate, '2026-11-10');
   assert.deepEqual(Object.keys(r.photos), ['p1']);
   assert.deepEqual(r.summary.photoRefsMissingInFile, ['p2']);
-  assert.equal(r.data.version, 2);
+  assert.equal(r.data.version, 3);
   assert.ok(r.warnings.some(w => /foto/.test(w)));
 });
 test('backup: formato antigo (v1.0, sem "format") continua aceito', () => {

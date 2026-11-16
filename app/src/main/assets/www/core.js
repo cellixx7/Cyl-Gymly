@@ -7,7 +7,7 @@
 const C = {};
 
 C.FORMAT_VERSION = 1;   // formato do arquivo de backup exportado
-C.DB_VERSION = 2;       // versão da estrutura de dados (2 = histórico de dias de treino)
+C.DB_VERSION = 3;       // versão da estrutura de dados (2 = histórico de dias de treino; 3 = cardápio e nome do tratamento)
 C.MAX_BACKUP_BYTES = 60 * 1024 * 1024;
 C.MAX_PHOTO_CHARS = 8 * 1024 * 1024;
 C.MAX_STRING = 5000;
@@ -58,7 +58,7 @@ C.RANGES = {
   waterMl: [1, 5000, 'ml', true], qty: [0.01, 5000, ''], kcalItem: [0, 10000, 'kcal'], macroItem: [0, 1000, 'g'],
   per100kcal: [0, 900, 'kcal'], per100macro: [0, 100, 'g'], unitG: [0.1, 5000, 'g'],
   sets: [1, 20, 'séries', true], reps: [0, 500, 'repetições', true], kg: [0, 1000, 'kg'], sleep: [0, 24, 'h'],
-  goalKcal: [0, 20000, 'kcal'], goalMacro: [0, 2000, 'g'], goalWater: [0, 20000, 'ml'], rest: [15, 600, 's', true]
+  goalKcal: [0, 20000, 'kcal'], goalMacro: [0, 2000, 'g'], goalWater: [0, 20000, 'ml'], rest: [15, 600, 's', true], restStep: [0, 120, 's', true]
 };
 // Valida um campo. Nunca corrige o valor em silêncio: devolve erro com mensagem.
 C.check = (kind, raw, opts) => {
@@ -245,7 +245,7 @@ C.validateDb = d => {
     if (p.heightCm != null && !(Number.isFinite(p.heightCm) && p.heightCm >= 100 && p.heightCm <= 250)) err('Perfil: altura inválida');
   }
   if (d.version != null && !(Number.isInteger(d.version) && d.version >= 1)) err('Versão dos dados inválida');
-  const ARR = ['nutritionGoals', 'foods', 'meals', 'water', 'plans', 'sessions', 'weights', 'measurements', 'medLogs', 'symptomLogs', 'energyLogs', 'reviews', 'scheduleHistory'];
+  const ARR = ['nutritionGoals', 'foods', 'meals', 'water', 'plans', 'sessions', 'weights', 'measurements', 'medLogs', 'symptomLogs', 'energyLogs', 'reviews', 'scheduleHistory', 'mealPlan'];
   ARR.forEach(k => { if (d[k] != null && !Array.isArray(d[k])) err(k + ' deveria ser uma lista'); });
   if (errors.length) return { errors, warnings };
 
@@ -284,6 +284,18 @@ C.validateDb = d => {
       if (!nullFin(it.grams, 0, 100000)) err('Refeições #' + (i + 1) + ' item ' + (j + 1) + ': quantidade inválida');
     });
     if (m.photoIds != null && (!Array.isArray(m.photoIds) || m.photoIds.some(p => typeof p !== 'string' || !C.SAFE_ID.test(p)))) err('Refeições #' + (i + 1) + ': referência de foto inválida');
+  });
+  // cardápio (plano alimentar): mesma forma dos itens de refeição, sem data
+  uniq(d.mealPlan || [], 'Cardápio');
+  (d.mealPlan || []).forEach((m, i) => {
+    if (!isObj(m)) return;
+    if (typeof m.label !== 'string') err('Cardápio #' + (i + 1) + ': nome inválido');
+    if (m.time != null && m.time !== '' && !C.isTime(m.time)) err('Cardápio #' + (i + 1) + ': horário inválido');
+    if (!Array.isArray(m.items)) return err('Cardápio #' + (i + 1) + ': itens inválidos');
+    m.items.forEach((it, j) => {
+      if (!isObj(it) || typeof it.name !== 'string') return err('Cardápio #' + (i + 1) + ' item ' + (j + 1) + ': inválido');
+      ['kcal', 'p', 'c', 'f', 'grams'].forEach(k => { if (!nullFin(it[k], 0, 100000)) err('Cardápio #' + (i + 1) + ' item ' + (j + 1) + ': valor de ' + k + ' inválido'); });
+    });
   });
   uniq(d.water || [], 'Água'); dated(d.water || [], 'Água');
   (d.water || []).forEach((w, i) => { if (isObj(w) && !fin(w.ml, 1, 20000)) err('Água #' + (i + 1) + ': quantidade inválida'); });
@@ -373,6 +385,9 @@ C.migrate = src => {
   }
   if (!isObj(d.settings)) d.settings = {};
   if (!d.settings.theme) d.settings.theme = 'auto';
+  if (!Array.isArray(d.mealPlan)) d.mealPlan = [];
+  // até a estrutura 2 o app era de uso pessoal e o tratamento tinha nome fixo: mantém o que a pessoa já via
+  if (!(d.version >= 3) && isObj(d.medication) && d.medication.name === undefined) d.medication.name = 'Mounjaro (tirzepatida)';
   if (!(d.version >= C.DB_VERSION)) d.version = C.DB_VERSION;
   return d;
 };
